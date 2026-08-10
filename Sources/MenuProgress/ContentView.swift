@@ -687,13 +687,17 @@ private struct KanbanColumnView: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            HStack(spacing: 4) {
+            ZStack {
                 Text(column.rawValue)
                     .font(.caption.weight(.semibold))
-                Spacer(minLength: 0)
-                Text("\(cards.count)")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+
+                HStack {
+                    Spacer(minLength: 0)
+                    Text("\(cards.count)")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Divider()

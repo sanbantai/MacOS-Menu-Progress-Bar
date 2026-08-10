@@ -1,0 +1,504 @@
+import AppKit
+import EventKit
+import Foundation
+
+struct CalendarEventItem: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let startDate: Date
+    let endDate: Date
+    let calendarName: String
+    let calendarColor: NSColor
+}
+
+struct ChecklistItem: Identifiable, Codable, Equatable {
+    let id: UUID
+    var text: String
+    var isCompleted: Bool
+
+    init(id: UUID = UUID(), text: String, isCompleted: Bool = false) {
+        self.id = id
+        self.text = text
+        self.isCompleted = isCompleted
+    }
+}
+
+enum KanbanColumn: String, CaseIterable, Codable, Hashable, Identifiable {
+    case index = "Index"
+    case wip = "WIP"
+    case done = "Done"
+
+    var id: String { rawValue }
+}
+
+struct KanbanCard: Identifiable, Codable, Equatable {
+    let id: UUID
+    var text: String
+    var column: KanbanColumn
+
+    init(id: UUID = UUID(), text: String, column: KanbanColumn = .index) {
+        self.id = id
+        self.text = text
+        self.column = column
+    }
+}
+
+struct QuickNote: Identifiable, Codable, Equatable {
+    let id: UUID
+    var text: String
+    let createdAt: Date
+
+    init(id: UUID = UUID(), text: String, createdAt: Date = Date()) {
+        self.id = id
+        self.text = text
+        self.createdAt = createdAt
+    }
+}
+
+@MainActor
+final class ProgressModel: ObservableObject {
+    enum Mode: String {
+        case timer
+        case calendar
+        case checklist
+        case kanban
+    }
+
+    @Published private(set) var mode: Mode = .timer
+    @Published private(set) var title = "Ready"
+    @Published private(set) var startDate: Date?
+    @Published private(set) var endDate: Date?
+    @Published private(set) var pausedRemaining: TimeInterval?
+    @Published private(set) var calendarEvents: [CalendarEventItem] = []
+    @Published private(set) var calendarMessage = "Connect Calendar to see today's events."
+    @Published private(set) var calendarAuthorized = false
+    @Published private(set) var checklistItems: [ChecklistItem] = []
+    @Published private(set) var kanbanCards: [KanbanCard] = []
+    @Published private(set) var notes: [QuickNote] = []
+    private let eventStore = EKEventStore()
+    private let defaults = UserDefaults.standard
+
+    init() {
+        restoreTimer()
+        restoreChecklist()
+        restoreKanban()
+        restoreNotes()
+        if defaults.string(forKey: "activeMode") == Mode.checklist.rawValue, !checklistItems.isEmpty {
+            mode = .checklist
+        } else if defaults.string(forKey: "activeMode") == Mode.kanban.rawValue, !kanbanCards.isEmpty {
+            mode = .kanban
+        }
+        updateAuthorizationState()
+    }
+
+    var isRunning: Bool {
+        (mode == .timer || mode == .calendar) && endDate != nil && pausedRemaining == nil
+    }
+    var isPaused: Bool { pausedRemaining != nil }
+    var hasSession: Bool {
+        switch mode {
+        case .checklist:
+            return !checklistItems.isEmpty
+        case .kanban:
+            return !kanbanCards.isEmpty
+        case .timer, .calendar:
+            return endDate != nil || pausedRemaining != nil
+        }
+    }
+
+    var completedChecklistCount: Int {
+        checklistItems.lazy.filter(\.isCompleted).count
+    }
+
+    var nextUncompletedChecklistItem: ChecklistItem? {
+        checklistItems.first { !$0.isCompleted }
+    }
+
+    var isChecklistComplete: Bool {
+        !checklistItems.isEmpty && completedChecklistCount == checklistItems.count
+    }
+
+    var completedKanbanCount: Int {
+        kanbanCards.lazy.filter { $0.column == .done }.count
+    }
+
+    var nextKanbanCard: KanbanCard? {
+        kanbanCards.first { $0.column == .wip } ?? kanbanCards.first { $0.column == .index }
+    }
+
+    var isKanbanComplete: Bool {
+        !kanbanCards.isEmpty && completedKanbanCount == kanbanCards.count
+    }
+
+    var totalDuration: TimeInterval {
+        guard let startDate, let endDate else { return 0 }
+        return max(endDate.timeIntervalSince(startDate), 1)
+    }
+
+    var remaining: TimeInterval {
+        if let pausedRemaining { return max(pausedRemaining, 0) }
+        guard let endDate else { return 0 }
+        return max(endDate.timeIntervalSinceNow, 0)
+    }
+
+    var progress: Double {
+        guard hasSession else { return 0 }
+        switch mode {
+        case .checklist:
+            return Double(completedChecklistCount) / Double(checklistItems.count)
+        case .kanban:
+            return Double(completedKanbanCount) / Double(kanbanCards.count)
+        case .timer, .calendar:
+            return min(max(1 - remaining / totalDuration, 0), 1)
+        }
+    }
+
+    var accessibilityText: String {
+        guard hasSession else { return "Menu Progress, ready" }
+        if mode == .checklist {
+            return "Checklist, \(Int(progress * 100)) percent complete, \(completedChecklistCount) of \(checklistItems.count) items complete"
+        }
+        if mode == .kanban {
+            return "Kanban, \(Int(progress * 100)) percent complete, \(completedKanbanCount) of \(kanbanCards.count) cards done"
+        }
+        return "\(title), \(Int(progress * 100)) percent complete, \(longRemaining) remaining"
+    }
+
+    var shortRemaining: String {
+        let seconds = Int(remaining.rounded(.up))
+        if seconds >= 3600 {
+            return String(format: "%d:%02d", seconds / 3600, (seconds % 3600) / 60)
+        }
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
+    var longRemaining: String {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = remaining >= 3600 ? [.hour, .minute] : [.minute, .second]
+        formatter.unitsStyle = .abbreviated
+        return formatter.string(from: remaining) ?? "0 min"
+    }
+
+    func startTimer(minutes: Int, name: String = "Focus timer") {
+        startTimer(seconds: max(1, minutes) * 60, name: name)
+    }
+
+    func startTimer(seconds: Int, name: String = "Focus timer") {
+        let duration = TimeInterval(max(1, seconds))
+        mode = .timer
+        title = name
+        startDate = Date()
+        endDate = Date().addingTimeInterval(duration)
+        pausedRemaining = nil
+        saveTimer()
+        objectWillChange.send()
+    }
+
+    func track(event: CalendarEventItem) {
+        mode = .calendar
+        title = event.title
+        startDate = event.startDate
+        endDate = event.endDate
+        pausedRemaining = nil
+        saveTimer()
+        objectWillChange.send()
+    }
+
+    func togglePause() {
+        guard mode == .timer else { return }
+        if let pausedRemaining {
+            let duration = totalDuration
+            let elapsed = max(duration - pausedRemaining, 0)
+            startDate = Date().addingTimeInterval(-elapsed)
+            endDate = Date().addingTimeInterval(pausedRemaining)
+            self.pausedRemaining = nil
+        } else if endDate != nil {
+            pausedRemaining = remaining
+        }
+        saveTimer()
+        objectWillChange.send()
+    }
+
+    func stop() {
+        mode = .timer
+        title = "Ready"
+        startDate = nil
+        endDate = nil
+        pausedRemaining = nil
+        clearSavedTimer()
+        defaults.set(Mode.timer.rawValue, forKey: "activeMode")
+        objectWillChange.send()
+    }
+
+    func addChecklistItem(_ text: String) {
+        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return }
+        checklistItems.append(ChecklistItem(text: cleaned))
+        activateChecklist()
+        saveChecklist()
+    }
+
+    func toggleChecklistItem(id: UUID) {
+        guard let index = checklistItems.firstIndex(where: { $0.id == id }) else { return }
+        checklistItems[index].isCompleted.toggle()
+        activateChecklist()
+        saveChecklist()
+    }
+
+    func updateChecklistItem(id: UUID, text: String) {
+        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty,
+              let index = checklistItems.firstIndex(where: { $0.id == id }) else { return }
+        checklistItems[index].text = cleaned
+        saveChecklist()
+    }
+
+    func deleteChecklistItem(id: UUID) {
+        checklistItems.removeAll { $0.id == id }
+        if checklistItems.isEmpty, mode == .checklist {
+            mode = .timer
+            defaults.set(Mode.timer.rawValue, forKey: "activeMode")
+        }
+        saveChecklist()
+    }
+
+    func clearChecklist() {
+        checklistItems.removeAll()
+        if mode == .checklist {
+            mode = .timer
+            defaults.set(Mode.timer.rawValue, forKey: "activeMode")
+        }
+        saveChecklist()
+    }
+
+    func activateChecklist() {
+        guard !checklistItems.isEmpty else { return }
+        mode = .checklist
+        defaults.set(Mode.checklist.rawValue, forKey: "activeMode")
+        objectWillChange.send()
+    }
+
+    func addKanbanCard(_ text: String) {
+        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return }
+        kanbanCards.append(KanbanCard(text: cleaned))
+        activateKanban()
+        saveKanban()
+    }
+
+    func moveKanbanCard(id: UUID, to column: KanbanColumn) {
+        guard let index = kanbanCards.firstIndex(where: { $0.id == id }) else { return }
+        kanbanCards[index].column = column
+        activateKanban()
+        saveKanban()
+    }
+
+    func updateKanbanCard(id: UUID, text: String) {
+        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty,
+              let index = kanbanCards.firstIndex(where: { $0.id == id }) else { return }
+        kanbanCards[index].text = cleaned
+        saveKanban()
+    }
+
+    func deleteKanbanCard(id: UUID) {
+        kanbanCards.removeAll { $0.id == id }
+        if kanbanCards.isEmpty, mode == .kanban {
+            mode = .timer
+            defaults.set(Mode.timer.rawValue, forKey: "activeMode")
+        }
+        saveKanban()
+    }
+
+    func clearKanban() {
+        kanbanCards.removeAll()
+        if mode == .kanban {
+            mode = .timer
+            defaults.set(Mode.timer.rawValue, forKey: "activeMode")
+        }
+        saveKanban()
+    }
+
+    func activateKanban() {
+        guard !kanbanCards.isEmpty else { return }
+        mode = .kanban
+        defaults.set(Mode.kanban.rawValue, forKey: "activeMode")
+        objectWillChange.send()
+    }
+
+    func addNote(_ text: String) {
+        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return }
+        notes.insert(QuickNote(text: cleaned), at: 0)
+        saveNotes()
+    }
+
+    func updateNote(id: UUID, text: String) {
+        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty,
+              let index = notes.firstIndex(where: { $0.id == id }) else { return }
+        notes[index].text = cleaned
+        saveNotes()
+    }
+
+    func deleteNote(id: UUID) {
+        notes.removeAll { $0.id == id }
+        saveNotes()
+    }
+
+    func clearNotes() {
+        notes.removeAll()
+        saveNotes()
+    }
+
+    func activateTimerIfAvailable() {
+        guard endDate != nil || pausedRemaining != nil else { return }
+        mode = defaults.string(forKey: "timerMode") == Mode.calendar.rawValue ? .calendar : .timer
+        defaults.set(mode.rawValue, forKey: "activeMode")
+        objectWillChange.send()
+    }
+
+    @discardableResult
+    func tick() -> Bool {
+        guard isRunning, remaining <= 0 else {
+            objectWillChange.send()
+            return false
+        }
+        stop()
+        return true
+    }
+
+    func requestCalendarAccess() {
+        let completion: @Sendable (Bool, Error?) -> Void = { [weak self] granted, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.calendarAuthorized = granted
+                if granted {
+                    self.refreshCalendar()
+                } else {
+                    self.calendarMessage = error?.localizedDescription ?? "Calendar access was not granted. You can enable it in System Settings → Privacy & Security → Calendars."
+                }
+            }
+        }
+
+        if #available(macOS 14.0, *) {
+            eventStore.requestFullAccessToEvents(completion: completion)
+        } else {
+            eventStore.requestAccess(to: .event, completion: completion)
+        }
+    }
+
+    func refreshCalendarIfAuthorized() {
+        updateAuthorizationState()
+        if calendarAuthorized { refreshCalendar() }
+    }
+
+    func refreshCalendar() {
+        let now = Date()
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: now)
+        let end = calendar.date(byAdding: .day, value: 1, to: start) ?? now.addingTimeInterval(86_400)
+        let predicate = eventStore.predicateForEvents(withStart: start, end: end, calendars: nil)
+        let fetched = eventStore.events(matching: predicate)
+            .filter { !$0.isAllDay && $0.endDate > now }
+            .sorted { $0.startDate < $1.startDate }
+            .prefix(12)
+
+        calendarEvents = fetched.map {
+            CalendarEventItem(
+                id: $0.eventIdentifier ?? UUID().uuidString,
+                title: $0.title?.isEmpty == false ? $0.title! : "Untitled event",
+                startDate: $0.startDate,
+                endDate: $0.endDate,
+                calendarName: $0.calendar.title,
+                calendarColor: NSColor(cgColor: $0.calendar.cgColor) ?? .controlAccentColor
+            )
+        }
+        calendarMessage = calendarEvents.isEmpty ? "No remaining timed events today." : "Choose an event to show its progress in the menu bar."
+    }
+
+    func trackCurrentEvent() {
+        let now = Date()
+        if let current = calendarEvents.first(where: { $0.startDate <= now && $0.endDate > now }) {
+            track(event: current)
+        } else {
+            calendarMessage = "There is no event happening right now."
+        }
+    }
+
+    private func updateAuthorizationState() {
+        let status = EKEventStore.authorizationStatus(for: .event)
+        if #available(macOS 14.0, *) {
+            calendarAuthorized = status == .fullAccess || status == .authorized
+        } else {
+            calendarAuthorized = status == .authorized
+        }
+    }
+
+    private func saveTimer() {
+        defaults.set(mode.rawValue, forKey: "mode")
+        defaults.set(mode.rawValue, forKey: "timerMode")
+        defaults.set(mode.rawValue, forKey: "activeMode")
+        defaults.set(title, forKey: "title")
+        defaults.set(startDate, forKey: "startDate")
+        defaults.set(endDate, forKey: "endDate")
+        if let pausedRemaining {
+            defaults.set(pausedRemaining, forKey: "pausedRemaining")
+        } else {
+            defaults.removeObject(forKey: "pausedRemaining")
+        }
+    }
+
+    private func restoreTimer() {
+        guard let savedStart = defaults.object(forKey: "startDate") as? Date,
+              let savedEnd = defaults.object(forKey: "endDate") as? Date else { return }
+        let savedPaused = defaults.object(forKey: "pausedRemaining") as? Double
+        if savedEnd > Date() || savedPaused != nil {
+            mode = Mode(rawValue: defaults.string(forKey: "timerMode") ?? defaults.string(forKey: "mode") ?? "timer") ?? .timer
+            title = defaults.string(forKey: "title") ?? "Focus timer"
+            startDate = savedStart
+            endDate = savedEnd
+            pausedRemaining = savedPaused
+        }
+    }
+
+    private func clearSavedTimer() {
+        ["mode", "title", "startDate", "endDate", "pausedRemaining"].forEach(defaults.removeObject(forKey:))
+    }
+
+    private func saveChecklist() {
+        if let data = try? JSONEncoder().encode(checklistItems) {
+            defaults.set(data, forKey: "checklistItems")
+        }
+    }
+
+    private func restoreChecklist() {
+        guard let data = defaults.data(forKey: "checklistItems"),
+              let items = try? JSONDecoder().decode([ChecklistItem].self, from: data) else { return }
+        checklistItems = items
+    }
+
+    private func saveKanban() {
+        if let data = try? JSONEncoder().encode(kanbanCards) {
+            defaults.set(data, forKey: "kanbanCards")
+        }
+    }
+
+    private func restoreKanban() {
+        guard let data = defaults.data(forKey: "kanbanCards"),
+              let cards = try? JSONDecoder().decode([KanbanCard].self, from: data) else { return }
+        kanbanCards = cards
+    }
+
+    private func saveNotes() {
+        if let data = try? JSONEncoder().encode(notes) {
+            defaults.set(data, forKey: "quickNotes")
+        }
+    }
+
+    private func restoreNotes() {
+        guard let data = defaults.data(forKey: "quickNotes"),
+              let savedNotes = try? JSONDecoder().decode([QuickNote].self, from: data) else { return }
+        notes = savedNotes
+    }
+}

@@ -38,3 +38,9 @@ swift build
 ```
 
 The packaged app is intentionally an accessory app: it has no Dock icon and is controlled entirely from the menu bar.
+
+## Project policies
+
+- [MIT License](LICENSE)
+- [Privacy Policy](PRIVACY.md)
+- [Security Policy](SECURITY.md)

@@ -11,7 +11,7 @@
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Menu Progress</string>
+    <string>The Papaya Project</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -22,9 +22,5 @@
     <string>13.0</string>
     <key>LSUIElement</key>
     <true/>
-    <key>NSCalendarsFullAccessUsageDescription</key>
-    <string>Menu Progress uses your calendar to show event progress in the menu bar.</string>
-    <key>NSCalendarsUsageDescription</key>
-    <string>Menu Progress uses your calendar to show event progress in the menu bar.</string>
 </dict>
 </plist>

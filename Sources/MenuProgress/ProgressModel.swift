@@ -1,15 +1,4 @@
-import AppKit
-import EventKit
 import Foundation
-
-struct CalendarEventItem: Identifiable, Hashable {
-    let id: String
-    let title: String
-    let startDate: Date
-    let endDate: Date
-    let calendarName: String
-    let calendarColor: NSColor
-}
 
 struct ChecklistItem: Identifiable, Codable, Equatable {
     let id: UUID
@@ -59,7 +48,6 @@ struct QuickNote: Identifiable, Codable, Equatable {
 final class ProgressModel: ObservableObject {
     enum Mode: String {
         case timer
-        case calendar
         case checklist
         case kanban
     }
@@ -69,17 +57,15 @@ final class ProgressModel: ObservableObject {
     @Published private(set) var startDate: Date?
     @Published private(set) var endDate: Date?
     @Published private(set) var pausedRemaining: TimeInterval?
-    @Published private(set) var calendarEvents: [CalendarEventItem] = []
-    @Published private(set) var calendarMessage = "Connect Calendar to see today's events."
-    @Published private(set) var calendarAuthorized = false
+    @Published private(set) var checklistTitle = "Your checklist"
     @Published private(set) var checklistItems: [ChecklistItem] = []
     @Published private(set) var kanbanCards: [KanbanCard] = []
     @Published private(set) var notes: [QuickNote] = []
-    private let eventStore = EKEventStore()
     private let defaults = UserDefaults.standard
 
     init() {
         restoreTimer()
+        restoreChecklistTitle()
         restoreChecklist()
         restoreKanban()
         restoreNotes()
@@ -88,11 +74,10 @@ final class ProgressModel: ObservableObject {
         } else if defaults.string(forKey: "activeMode") == Mode.kanban.rawValue, !kanbanCards.isEmpty {
             mode = .kanban
         }
-        updateAuthorizationState()
     }
 
     var isRunning: Bool {
-        (mode == .timer || mode == .calendar) && endDate != nil && pausedRemaining == nil
+        mode == .timer && endDate != nil && pausedRemaining == nil
     }
     var isPaused: Bool { pausedRemaining != nil }
     var hasSession: Bool {
@@ -101,7 +86,7 @@ final class ProgressModel: ObservableObject {
             return !checklistItems.isEmpty
         case .kanban:
             return !kanbanCards.isEmpty
-        case .timer, .calendar:
+        case .timer:
             return endDate != nil || pausedRemaining != nil
         }
     }
@@ -148,13 +133,13 @@ final class ProgressModel: ObservableObject {
             return Double(completedChecklistCount) / Double(checklistItems.count)
         case .kanban:
             return Double(completedKanbanCount) / Double(kanbanCards.count)
-        case .timer, .calendar:
+        case .timer:
             return min(max(1 - remaining / totalDuration, 0), 1)
         }
     }
 
     var accessibilityText: String {
-        guard hasSession else { return "Menu Progress, ready" }
+        guard hasSession else { return "The Papaya Project, ready" }
         if mode == .checklist {
             return "Checklist, \(Int(progress * 100)) percent complete, \(completedChecklistCount) of \(checklistItems.count) items complete"
         }
@@ -189,16 +174,6 @@ final class ProgressModel: ObservableObject {
         title = name
         startDate = Date()
         endDate = Date().addingTimeInterval(duration)
-        pausedRemaining = nil
-        saveTimer()
-        objectWillChange.send()
-    }
-
-    func track(event: CalendarEventItem) {
-        mode = .calendar
-        title = event.title
-        startDate = event.startDate
-        endDate = event.endDate
         pausedRemaining = nil
         saveTimer()
         objectWillChange.send()
@@ -253,6 +228,25 @@ final class ProgressModel: ObservableObject {
         saveChecklist()
     }
 
+    func updateChecklistTitle(_ title: String) {
+        let cleaned = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return }
+        checklistTitle = cleaned
+        defaults.set(cleaned, forKey: "checklistTitle")
+    }
+
+    func moveChecklistItem(id: UUID, before destinationID: UUID?) {
+        guard let sourceIndex = checklistItems.firstIndex(where: { $0.id == id }) else { return }
+        let item = checklistItems.remove(at: sourceIndex)
+        if let destinationID,
+           let destinationIndex = checklistItems.firstIndex(where: { $0.id == destinationID }) {
+            checklistItems.insert(item, at: destinationIndex)
+        } else {
+            checklistItems.append(item)
+        }
+        saveChecklist()
+    }
+
     func deleteChecklistItem(id: UUID) {
         checklistItems.removeAll { $0.id == id }
         if checklistItems.isEmpty, mode == .checklist {
@@ -286,9 +280,18 @@ final class ProgressModel: ObservableObject {
         saveKanban()
     }
 
-    func moveKanbanCard(id: UUID, to column: KanbanColumn) {
-        guard let index = kanbanCards.firstIndex(where: { $0.id == id }) else { return }
-        kanbanCards[index].column = column
+    func moveKanbanCard(id: UUID, to column: KanbanColumn, before destinationID: UUID? = nil) {
+        guard let sourceIndex = kanbanCards.firstIndex(where: { $0.id == id }) else { return }
+        var card = kanbanCards.remove(at: sourceIndex)
+        card.column = column
+        if let destinationID,
+           let destinationIndex = kanbanCards.firstIndex(where: { $0.id == destinationID }) {
+            kanbanCards.insert(card, at: destinationIndex)
+        } else if let lastIndex = kanbanCards.lastIndex(where: { $0.column == column }) {
+            kanbanCards.insert(card, at: kanbanCards.index(after: lastIndex))
+        } else {
+            kanbanCards.append(card)
+        }
         activateKanban()
         saveKanban()
     }
@@ -341,6 +344,18 @@ final class ProgressModel: ObservableObject {
         saveNotes()
     }
 
+    func moveNote(id: UUID, before destinationID: UUID?) {
+        guard let sourceIndex = notes.firstIndex(where: { $0.id == id }) else { return }
+        let note = notes.remove(at: sourceIndex)
+        if let destinationID,
+           let destinationIndex = notes.firstIndex(where: { $0.id == destinationID }) {
+            notes.insert(note, at: destinationIndex)
+        } else {
+            notes.append(note)
+        }
+        saveNotes()
+    }
+
     func deleteNote(id: UUID) {
         notes.removeAll { $0.id == id }
         saveNotes()
@@ -353,7 +368,7 @@ final class ProgressModel: ObservableObject {
 
     func activateTimerIfAvailable() {
         guard endDate != nil || pausedRemaining != nil else { return }
-        mode = defaults.string(forKey: "timerMode") == Mode.calendar.rawValue ? .calendar : .timer
+        mode = .timer
         defaults.set(mode.rawValue, forKey: "activeMode")
         objectWillChange.send()
     }
@@ -366,73 +381,6 @@ final class ProgressModel: ObservableObject {
         }
         stop()
         return true
-    }
-
-    func requestCalendarAccess() {
-        let completion: @Sendable (Bool, Error?) -> Void = { [weak self] granted, error in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                self.calendarAuthorized = granted
-                if granted {
-                    self.refreshCalendar()
-                } else {
-                    self.calendarMessage = error?.localizedDescription ?? "Calendar access was not granted. You can enable it in System Settings → Privacy & Security → Calendars."
-                }
-            }
-        }
-
-        if #available(macOS 14.0, *) {
-            eventStore.requestFullAccessToEvents(completion: completion)
-        } else {
-            eventStore.requestAccess(to: .event, completion: completion)
-        }
-    }
-
-    func refreshCalendarIfAuthorized() {
-        updateAuthorizationState()
-        if calendarAuthorized { refreshCalendar() }
-    }
-
-    func refreshCalendar() {
-        let now = Date()
-        let calendar = Calendar.current
-        let start = calendar.startOfDay(for: now)
-        let end = calendar.date(byAdding: .day, value: 1, to: start) ?? now.addingTimeInterval(86_400)
-        let predicate = eventStore.predicateForEvents(withStart: start, end: end, calendars: nil)
-        let fetched = eventStore.events(matching: predicate)
-            .filter { !$0.isAllDay && $0.endDate > now }
-            .sorted { $0.startDate < $1.startDate }
-            .prefix(12)
-
-        calendarEvents = fetched.map {
-            CalendarEventItem(
-                id: $0.eventIdentifier ?? UUID().uuidString,
-                title: $0.title?.isEmpty == false ? $0.title! : "Untitled event",
-                startDate: $0.startDate,
-                endDate: $0.endDate,
-                calendarName: $0.calendar.title,
-                calendarColor: NSColor(cgColor: $0.calendar.cgColor) ?? .controlAccentColor
-            )
-        }
-        calendarMessage = calendarEvents.isEmpty ? "No remaining timed events today." : "Choose an event to show its progress in the menu bar."
-    }
-
-    func trackCurrentEvent() {
-        let now = Date()
-        if let current = calendarEvents.first(where: { $0.startDate <= now && $0.endDate > now }) {
-            track(event: current)
-        } else {
-            calendarMessage = "There is no event happening right now."
-        }
-    }
-
-    private func updateAuthorizationState() {
-        let status = EKEventStore.authorizationStatus(for: .event)
-        if #available(macOS 14.0, *) {
-            calendarAuthorized = status == .fullAccess || status == .authorized
-        } else {
-            calendarAuthorized = status == .authorized
-        }
     }
 
     private func saveTimer() {
@@ -470,6 +418,10 @@ final class ProgressModel: ObservableObject {
         if let data = try? JSONEncoder().encode(checklistItems) {
             defaults.set(data, forKey: "checklistItems")
         }
+    }
+
+    private func restoreChecklistTitle() {
+        checklistTitle = defaults.string(forKey: "checklistTitle") ?? "Your checklist"
     }
 
     private func restoreChecklist() {

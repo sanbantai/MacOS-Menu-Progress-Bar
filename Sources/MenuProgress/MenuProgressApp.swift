@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var timer: Timer?
     private var checklistWasComplete = false
     private var kanbanWasComplete = false
+    private var timerCompletionIsVisible = false
     private let completionSound = NSSound(
         contentsOfFile: "/System/Library/Sounds/Glass.aiff",
         byReference: true
@@ -34,17 +35,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.sendAction(on: .leftMouseUp)
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleNone
-        button.toolTip = "Menu Progress"
+        button.toolTip = "The Papaya Project"
 
         popover.behavior = .transient
         popover.animates = true
-        popover.contentSize = NSSize(width: 430, height: 620)
-        popover.contentViewController = NSHostingController(rootView: ContentView(model: model))
+        let hostingController = NSHostingController(rootView: ContentView(model: model))
+        hostingController.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = hostingController
 
         checklistWasComplete = model.isChecklistComplete
         kanbanWasComplete = model.isKanbanComplete
         updateStatusItem()
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.updateStatusItem()
             }
@@ -60,7 +62,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if popover.isShown {
             popover.performClose(nil)
         } else {
-            model.refreshCalendarIfAuthorized()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
         }
@@ -76,18 +77,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             completionSound?.stop()
             completionSound?.play()
         }
+        if timedSessionCompleted {
+            timerCompletionIsVisible = true
+        } else if model.hasSession {
+            timerCompletionIsVisible = false
+        }
         checklistWasComplete = checklistIsComplete
         kanbanWasComplete = kanbanIsComplete
 
+        let currentTaskIsComplete = (model.mode == .checklist && checklistIsComplete)
+            || (model.mode == .kanban && kanbanIsComplete)
+        let displayCompleted = timerCompletionIsVisible || currentTaskIsComplete
+
         statusItem.button?.image = progressBarImage(
-            progress: model.progress,
-            active: model.hasSession,
-            label: "There ain't no grave"
+            progress: displayCompleted ? 1 : model.progress,
+            active: displayCompleted || model.hasSession,
+            completed: displayCompleted
         )
         statusItem.button?.setAccessibilityLabel(model.accessibilityText)
     }
 
-    private func progressBarImage(progress: Double, active: Bool, label: String) -> NSImage {
+    private func progressBarImage(
+        progress: Double,
+        active: Bool,
+        completed: Bool
+    ) -> NSImage {
         let width: CGFloat = 252
         let height: CGFloat = 18
         let barHeight: CGFloat = 18
@@ -96,7 +110,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let clampedProgress = min(max(progress, 0), 1)
         let filledWidth = active ? width * clampedProgress : 0
         let filledRect = NSRect(x: 0, y: barRect.minY, width: filledWidth, height: barHeight)
-        let racingGreen = NSColor(srgbRed: 0, green: 0.651, blue: 0.318, alpha: 1)
+        let papayaOrange = NSColor(srgbRed: 1, green: 0.48, blue: 0.18, alpha: 1)
+        let completionGreen = NSColor(srgbRed: 0.12, green: 0.72, blue: 0.32, alpha: 1)
 
         image.lockFocus()
         let track = NSBezierPath(roundedRect: barRect, xRadius: 9, yRadius: 9)
@@ -109,31 +124,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if active, filledWidth > 0 {
             NSGraphicsContext.current?.saveGraphicsState()
             track.addClip()
-            NSColor.white.setFill()
+            (completed ? completionGreen : papayaOrange).setFill()
             NSBezierPath(rect: filledRect).fill()
             NSGraphicsContext.current?.restoreGraphicsState()
         }
 
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.alignment = .center
-        paragraphStyle.lineBreakMode = .byTruncatingTail
-        let displayLabel = label.uppercased()
-        let fontSize: CGFloat = displayLabel.hasSuffix("%") ? 13 : 11
-        let font = NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .black)
-        let baseAttributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: racingGreen,
-            .paragraphStyle: paragraphStyle
-        ]
-        let attributedLabel = NSAttributedString(string: displayLabel, attributes: baseAttributes)
-        let textHeight = ceil(attributedLabel.size().height)
-        let textRect = NSRect(
-            x: 6,
-            y: floor(barRect.midY - textHeight / 2),
-            width: width - 12,
-            height: textHeight
+        let phrases = ["Sanbantai", "Papaya", "Back To Work!"]
+        let phraseDuration: TimeInterval = 4.8
+        let elapsed = Date().timeIntervalSinceReferenceDate
+        let phraseIndex = Int(elapsed / phraseDuration) % phrases.count
+        let localPhase = CGFloat(elapsed.truncatingRemainder(dividingBy: phraseDuration) / phraseDuration)
+        let revealLinear = min(localPhase / 0.58, 1)
+        let reveal = revealLinear * revealLinear * (3 - 2 * revealLinear)
+        let fadeLinear = min(max((localPhase - 0.82) / 0.18, 0), 1)
+        let opacity = 1 - fadeLinear * fadeLinear * (3 - 2 * fadeLinear)
+        let font = NSFont(name: "Snell Roundhand", size: 14)
+            ?? NSFont(name: "Apple Chancery", size: 13)
+            ?? NSFont.systemFont(ofSize: 13, weight: .medium)
+        let glow = NSShadow()
+        glow.shadowColor = NSColor.white.withAlphaComponent(0.16)
+        glow.shadowBlurRadius = 1.5
+        glow.shadowOffset = .zero
+        let handwriting = NSAttributedString(
+            string: phrases[phraseIndex],
+            attributes: [
+                .font: font,
+                .foregroundColor: NSColor.white.withAlphaComponent(opacity * 0.92),
+                .shadow: glow
+            ]
         )
-        attributedLabel.draw(in: textRect)
+        let handwritingSize = handwriting.size()
+        let handwritingOrigin = NSPoint(
+            x: floor(barRect.midX - handwritingSize.width / 2),
+            y: floor(barRect.midY - handwritingSize.height / 2)
+        )
+        NSGraphicsContext.current?.saveGraphicsState()
+        NSBezierPath(
+            rect: NSRect(
+                x: handwritingOrigin.x,
+                y: handwritingOrigin.y - 2,
+                width: handwritingSize.width * reveal,
+                height: handwritingSize.height + 4
+            )
+        ).addClip()
+        handwriting.draw(at: handwritingOrigin)
+        NSGraphicsContext.current?.restoreGraphicsState()
 
         image.unlockFocus()
         image.isTemplate = false

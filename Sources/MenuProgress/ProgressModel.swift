@@ -47,14 +47,27 @@ final class ProgressModel: ObservableObject {
     @Published private(set) var kanbanCards: [KanbanCard] = []
     @Published private(set) var notes: [QuickNote] = []
     private let defaults = UserDefaults.standard
+    private let legacyDefaultsDomain = "local.menuprogress.app"
+    private let legacyMigrationKey = "didMigrateMenuProgressDefaults"
 
     init() {
+        migrateLegacyDefaultsIfNeeded()
         restoreTimer()
         restoreKanban()
         restoreNotes()
         if defaults.string(forKey: "activeMode") == Mode.kanban.rawValue, !kanbanCards.isEmpty {
             mode = .kanban
         }
+    }
+
+    private func migrateLegacyDefaultsIfNeeded() {
+        guard !defaults.bool(forKey: legacyMigrationKey) else { return }
+        if let legacyDefaults = defaults.persistentDomain(forName: legacyDefaultsDomain) {
+            for (key, value) in legacyDefaults where defaults.object(forKey: key) == nil {
+                defaults.set(value, forKey: key)
+            }
+        }
+        defaults.set(true, forKey: legacyMigrationKey)
     }
 
     var isRunning: Bool {
@@ -269,9 +282,12 @@ final class ProgressModel: ObservableObject {
     }
 
     @discardableResult
-    func tick() -> Bool {
-        guard isRunning, remaining <= 0 else {
-            objectWillChange.send()
+    func tick(notifyObservers: Bool = true) -> Bool {
+        guard isRunning else { return false }
+        guard remaining <= 0 else {
+            if notifyObservers {
+                objectWillChange.send()
+            }
             return false
         }
         stop()

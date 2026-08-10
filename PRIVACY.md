@@ -2,39 +2,44 @@
 
 Effective: August 10, 2026
 
-Menu Progress is designed to work locally on your Mac. It does not include user accounts, advertising, analytics, tracking, or third-party SDKs, and it does not transmit your data to the developer or any external server.
+The Squeeze is designed to work locally on your Mac. It has no user accounts, advertising, analytics, tracking, or third-party SDKs, and it does not transmit your data to the developer or an external service.
 
 ## Data stored on your Mac
 
-Menu Progress stores the following information locally in macOS user preferences so that it can restore your workspace:
+The Squeeze stores the following information in macOS user preferences so it can restore your workspace:
 
-- timer start, end, and paused state;
-- checklist items and their completion state;
-- Kanban cards and their columns;
-- quick notes; and
+- timer start, end, duration, and paused state;
+- the currently active tool;
+- Kanban card text, order, and column;
+- quick-note text and order; and
 - tool visibility preferences.
 
-This information stays on your Mac. You can delete checklist items, Kanban cards, and notes from within the app. You can remove all saved Menu Progress preferences by quitting the app and running:
+This data uses the preferences domain `com.sanbantai.thesqueeze` and remains on your Mac.
+
+Version 0.0.2 performs a one-time local migration from the legacy `local.menuprogress.app` preferences domain. The migration copies existing workspace data into the new domain; it does not transmit or upload anything.
+
+## Deleting data
+
+Individual Kanban cards and notes can be deleted inside the app. The **Clear board** and **Clear notes** actions require confirmation before removing all content in their section.
+
+To remove all current and legacy preferences, quit The Squeeze and run:
 
 ```sh
+defaults delete com.sanbantai.thesqueeze
 defaults delete local.menuprogress.app
 ```
 
-## Calendar access
+Deleting the app does not automatically delete its macOS preferences.
 
-Calendar access is optional. If you grant permission, Menu Progress uses Apple's EventKit framework to read upcoming timed events from calendars already configured on your Mac.
+## Permissions and network activity
 
-The list of upcoming events is held in memory and is not uploaded. When you choose to track an event, its title, start time, and end time are stored locally as the active progress session so that it can be restored after the app restarts.
+The Squeeze does not request Calendar, Contacts, Photos, Location, Microphone, Camera, or Accessibility access. It does not make network requests.
 
-You can revoke Calendar access at any time in **System Settings → Privacy & Security → Calendars**.
-
-## Network activity
-
-Menu Progress does not make network requests. Calendar providers such as iCloud or Google may synchronize through macOS independently of Menu Progress under their own privacy policies.
+macOS may access Apple services independently for operating-system features such as Gatekeeper or application metadata. That activity is controlled by macOS, not The Squeeze.
 
 ## Changes to this policy
 
-If the app's data practices change, this policy will be updated with a new effective date before those changes are released.
+If the app's data practices change, this policy will be updated before the changed version is released.
 
 ## Contact
 

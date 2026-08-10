@@ -2,12 +2,16 @@
 
 ## Supported versions
 
-Security fixes are provided for the latest published version of Menu Progress.
+Security fixes are provided for the latest published version of The Squeeze.
 
 | Version | Supported |
 | --- | --- |
-| 0.0.x | Yes |
-| Earlier versions | No |
+| 0.0.2 | Yes |
+| 0.0.1 and earlier | No |
+
+## Release artifacts
+
+The Squeeze releases are ad-hoc signed native macOS applications. Each GitHub release should include the application archive and its SHA-256 checksum file so users can verify the downloaded artifact.
 
 ## Reporting a vulnerability
 
@@ -17,7 +21,7 @@ Report them privately through GitHub's **Security → Report a vulnerability** w
 
 - a clear description of the issue;
 - steps or sample code that reproduce it;
-- the affected macOS and Menu Progress versions; and
+- the affected macOS and The Squeeze versions; and
 - the potential impact, if known.
 
 You should receive an acknowledgment within five business days. The maintainer will investigate, provide status updates when practical, and coordinate disclosure after a fix is available.

@@ -1,46 +1,61 @@
+<p align="center">
+  <img src="Resources/TheSqueezeReadmeLogo.png" width="144" alt="The Squeeze outlined circular papaya progress logo">
+</p>
+
 # The Squeeze
 
-A small native macOS menu-bar app that keeps the progress of a timer or calendar event visible at a glance.
+The Squeeze is a private, native macOS menu-bar workspace for turning time and tasks into visible progress. Start a focus timer, move work across a Kanban board, or keep quick notes—all without creating an account or sending data off your Mac.
+
+Current release: **v0.0.2**
 
 ## Features
 
-- Start 5, 15, 60, or 90-minute timers, or enter a custom duration in hours, minutes, and seconds.
-- See a continuous progress bar and the “THERE AIN'T NO GRAVE” label directly in the macOS menu bar.
-- Pause, resume, and stop manual timers.
-- Hear the Glass system sound when a timer or Kanban board reaches completion.
-- Track and edit tasks in a persistent drag-and-drop Index, WIP, and Done Kanban board.
-- Edit persistent quick notes in place.
-- Hide or show Timer, Kanban, and Notes from the bottom Settings tab.
-- View today's remaining Apple Calendar events and track any event's progress.
-- Works with Google Calendar through the Google account already connected to macOS.
-- Restores the active timer after the app restarts.
+- Start 5, 15, 60, or 90-minute timers with one click.
+- Enter a custom duration and press Return or **GO!** to start.
+- Watch the papaya grinder and juice glass fill smoothly with timer progress.
+- Keep progress visible in the menu bar; active work fills orange and completed work turns green.
+- Move cards between persistent **Index**, **WIP**, and **Done** Kanban columns with animated drag-and-drop.
+- Create, edit, reorder, and delete persistent quick notes.
+- Choose which Timer, Kanban, and Notes tabs are visible.
+- Confirm destructive clear actions with **Are You Sure Buddy?** before data is removed.
+- Restore active timers and local workspace data after restarting the app.
 
-## Build and run
+## Install a release
+
+1. Download `The-Squeeze-v0.0.2.zip` from the GitHub Releases page.
+2. Unzip it and move **The Squeeze.app** to `/Applications`.
+3. Open the app. It lives in the menu bar rather than showing a normal running-app Dock icon.
+
+Release builds are ad-hoc signed. If macOS blocks the first launch, Control-click **The Squeeze.app**, choose **Open**, and confirm once.
+
+## Build from source
 
 Requirements: macOS 13 or newer and Xcode Command Line Tools.
 
 ```sh
 chmod +x scripts/build-app.sh
-./scripts/build-app.sh
+./scripts/build-app.sh release
 open "dist/The Squeeze.app"
 ```
 
-On first use, click **Connect Calendar** and allow calendar access. To expose a Google calendar, open **System Settings → Internet Accounts → your Google account** and enable **Calendars**. The events should also be visible in Apple's Calendar app.
-
-Because this local build is ad-hoc signed, macOS may ask for Calendar permission again after rebuilding it. For regular personal use, move the finished app to `/Applications` before granting permission.
-
-## Development
-
-Run a debug build with:
+For a debug build:
 
 ```sh
 swift build
 ```
 
-The packaged app is intentionally an accessory app: it has no Dock icon and is controlled entirely from the menu bar.
+The packaged app is an accessory app (`LSUIElement`): it is controlled from the menu bar. You can keep it in the Dock as a launcher, but its running status remains in the menu bar.
 
-## Project policies
+## Data and privacy
 
-- [MIT License](LICENSE)
-- [Privacy Policy](PRIVACY.md)
+The Squeeze has no accounts, analytics, ads, tracking, third-party SDKs, or network requests. Timer state, Kanban cards, notes, and visibility settings are stored locally in macOS preferences.
+
+See the [Privacy Policy](PRIVACY.md) for stored-data and deletion details.
+
+## Release information
+
+- [v0.0.2 release notes](RELEASE_NOTES.md)
+- [Changelog](CHANGELOG.md)
+- [Release checklist](RELEASING.md)
 - [Security Policy](SECURITY.md)
+- [MIT License](LICENSE)

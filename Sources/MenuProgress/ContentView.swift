@@ -1000,7 +1000,7 @@ private struct PapayaJuiceView: View {
     let highlight: Color
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 30)) { timeline in
+        TimelineView(.animation(minimumInterval: 1 / 30, paused: !isPouring)) { timeline in
             PapayaJuiceFrame(
                 progress: progress,
                 time: CGFloat(timeline.date.timeIntervalSinceReferenceDate),

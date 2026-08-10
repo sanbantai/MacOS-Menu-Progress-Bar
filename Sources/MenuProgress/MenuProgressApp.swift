@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        installBundledAppIcon()
         statusItem = NSStatusBar.system.statusItem(withLength: 260)
         guard let button = statusItem.button else { return }
 
@@ -44,11 +45,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         kanbanWasComplete = model.isKanbanComplete
         updateStatusItem()
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.updateStatusItem()
-            }
-        }
+        timer = Timer.scheduledTimer(
+            timeInterval: 1.0 / 20.0,
+            target: self,
+            selector: #selector(refreshStatusItem),
+            userInfo: nil,
+            repeats: true
+        )
+        timer?.tolerance = 1.0 / 100.0
+    }
+
+    private func installBundledAppIcon() {
+        guard let iconURL = Bundle.main.url(forResource: "TheSqueezeIcon", withExtension: "png"),
+              let icon = NSImage(contentsOf: iconURL) else { return }
+        NSApp.applicationIconImage = icon
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -65,8 +75,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc private func refreshStatusItem() {
+        updateStatusItem()
+    }
+
     private func updateStatusItem() {
-        let timedSessionCompleted = model.tick()
+        let timedSessionCompleted = model.tick(notifyObservers: popover.isShown)
         let kanbanIsComplete = model.isKanbanComplete
         if timedSessionCompleted
             || (kanbanIsComplete && !kanbanWasComplete) {
@@ -83,11 +97,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let currentTaskIsComplete = model.mode == .kanban && kanbanIsComplete
         let displayCompleted = timerCompletionIsVisible || currentTaskIsComplete
 
-        statusItem.button?.image = progressBarImage(
-            progress: displayCompleted ? 1 : model.progress,
-            active: displayCompleted || model.hasSession,
-            completed: displayCompleted
-        )
+        statusItem.button?.image = autoreleasepool {
+            progressBarImage(
+                progress: displayCompleted ? 1 : model.progress,
+                active: displayCompleted || model.hasSession,
+                completed: displayCompleted
+            )
+        }
         statusItem.button?.setAccessibilityLabel(model.accessibilityText)
     }
 

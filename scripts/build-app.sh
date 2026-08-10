@@ -28,6 +28,7 @@ mkdir -p "$contents_dir/MacOS" "$contents_dir/Resources"
 cp "$binary_dir/MenuProgress" "$contents_dir/MacOS/MenuProgress"
 cp "$project_dir/Resources/Info.plist" "$contents_dir/Info.plist"
 cp "$project_dir/Resources/AppIcon.icns" "$contents_dir/Resources/AppIcon.icns"
+cp "$project_dir/Resources/TheSqueezeIcon.png" "$contents_dir/Resources/TheSqueezeIcon.png"
 
 codesign --force --deep --sign - "$app_dir"
 echo "Built: $app_dir"

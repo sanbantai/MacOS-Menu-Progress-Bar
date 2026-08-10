@@ -21,7 +21,6 @@ private extension Font {
 struct ContentView: View {
     private enum Tool: String, CaseIterable, Identifiable {
         case timer = "Timer"
-        case checklist = "Checklist"
         case kanban = "Kanban"
         case notes = "Notes"
 
@@ -29,13 +28,11 @@ struct ContentView: View {
     }
 
     private enum ClearTarget {
-        case checklist
         case kanban
         case notes
 
         var buttonTitle: String {
             switch self {
-            case .checklist: return "Clear Checklist"
             case .kanban: return "Clear Kanban Board"
             case .notes: return "Clear Notes"
             }
@@ -43,7 +40,6 @@ struct ContentView: View {
 
         var message: String {
             switch self {
-            case .checklist: return "This will permanently delete every checklist item."
             case .kanban: return "This will permanently delete every Kanban card."
             case .notes: return "This will permanently delete every note."
             }
@@ -53,18 +49,11 @@ struct ContentView: View {
     @ObservedObject var model: ProgressModel
     @Namespace private var kanbanReorderNamespace
     @AppStorage("showTimerTool") private var showTimer = true
-    @AppStorage("showChecklistTool") private var showChecklist = true
     @AppStorage("showKanbanTool") private var showKanban = true
     @AppStorage("showNotesTool") private var showNotes = true
     @State private var customHours = "0"
     @State private var customMinutes = "0"
     @State private var customSeconds = "0"
-    @State private var draggedChecklistItemID: UUID?
-    @State private var checklistDragLocation: CGPoint?
-    @State private var checklistItemFrames: [UUID: CGRect] = [:]
-    @State private var checklistTitleDraft = ""
-    @State private var isEditingChecklistTitle = false
-    @State private var isHoveringChecklistTitle = false
     @State private var draggedKanbanCardID: UUID?
     @State private var kanbanDragLocation: CGPoint?
     @State private var kanbanColumnFrames: [KanbanColumn: CGRect] = [:]
@@ -72,7 +61,6 @@ struct ContentView: View {
     @State private var draggedNoteID: UUID?
     @State private var noteDragLocation: CGPoint?
     @State private var noteFrames: [UUID: CGRect] = [:]
-    @State private var newChecklistItem = ""
     @State private var newKanbanCard = ""
     @State private var newNote = ""
     @State private var pendingClearTarget: ClearTarget?
@@ -130,7 +118,6 @@ struct ContentView: View {
             selectInitialTool()
         }
         .onChange(of: showTimer) { _ in ensureVisibleSelection() }
-        .onChange(of: showChecklist) { _ in ensureVisibleSelection() }
         .onChange(of: showKanban) { _ in ensureVisibleSelection() }
         .onChange(of: showNotes) { _ in ensureVisibleSelection() }
     }
@@ -139,7 +126,6 @@ struct ContentView: View {
         Tool.allCases.filter {
             switch $0 {
             case .timer: return showTimer
-            case .checklist: return showChecklist
             case .kanban: return showKanban
             case .notes: return showNotes
             }
@@ -167,7 +153,7 @@ struct ContentView: View {
 
             HStack(spacing: 8) {
                 ForEach([5, 15, 60, 90], id: \.self) { minutes in
-                    Button { selectDuration(minutes: minutes) } label: {
+                    Button { startPresetTimer(minutes: minutes) } label: {
                         VStack(spacing: 2) {
                             Text("\(minutes)")
                                 .font(.app(.title3, weight: .semibold))
@@ -239,8 +225,6 @@ struct ContentView: View {
         switch selectedTool {
         case .timer:
             timerControls
-        case .checklist:
-            checklistControls
         case .kanban:
             kanbanControls
         case .notes:
@@ -248,119 +232,9 @@ struct ContentView: View {
         }
     }
 
-    private var checklistControls: some View {
-        VStack(alignment: .center, spacing: 12) {
-            HStack(spacing: 8) {
-                if isEditingChecklistTitle {
-                    TextField("Checklist title", text: $checklistTitleDraft)
-                        .textFieldStyle(.roundedBorder)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 320)
-                        .onSubmit(saveChecklistTitle)
-                    Button(action: saveChecklistTitle) {
-                        Image(systemName: "checkmark")
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(cleanedChecklistTitle.isEmpty)
-                    .help("Save title")
-                    Button(action: cancelChecklistTitleEdit) {
-                        Image(systemName: "xmark")
-                    }
-                    .buttonStyle(.plain)
-                    .help("Cancel")
-                } else {
-                    Label(model.checklistTitle, systemImage: "checklist")
-                        .font(.app(.headline, weight: .semibold))
-                    Button {
-                        checklistTitleDraft = model.checklistTitle
-                        isEditingChecklistTitle = true
-                    } label: {
-                        Image(systemName: "pencil")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .opacity(isHoveringChecklistTitle ? 1 : 0)
-                    .allowsHitTesting(isHoveringChecklistTitle)
-                    .help("Edit checklist title")
-                }
-            }
-            .onHover { isHoveringChecklistTitle = $0 }
-
-            HStack {
-                TextField("Add an item", text: $newChecklistItem)
-                    .textFieldStyle(.roundedBorder)
-                    .multilineTextAlignment(.center)
-                    .onSubmit(addChecklistItem)
-                Button("Add") { addChecklistItem() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(newChecklistItem.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-
-            if model.checklistItems.isEmpty {
-                VStack(spacing: 6) {
-                    Image(systemName: "checkmark.square")
-                        .font(.largeTitle)
-                        .foregroundStyle(.tertiary)
-                    Text("Add tasks and the menu-bar progress will fill as you complete them.")
-                        .font(.app(.caption1))
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-            } else {
-                ZStack(alignment: .topLeading) {
-                    ScrollView {
-                        LazyVStack(spacing: 6) {
-                            ForEach(model.checklistItems) { item in
-                                ChecklistRow(
-                                    item: item,
-                                    isBeingDragged: draggedChecklistItemID == item.id,
-                                    onDragChanged: { updateChecklistDrag(id: item.id, location: $0) },
-                                    onDragEnded: { finishChecklistDrag(id: item.id, location: $0) },
-                                    onToggle: { model.toggleChecklistItem(id: item.id) },
-                                    onSave: { model.updateChecklistItem(id: item.id, text: $0) },
-                                    onDelete: { model.deleteChecklistItem(id: item.id) }
-                                )
-                            }
-                        }
-                        .animation(
-                            .spring(response: 0.36, dampingFraction: 0.78),
-                            value: model.checklistItems.map(\.id)
-                        )
-                    }
-
-                    if let draggedChecklistItemID,
-                       let checklistDragLocation,
-                       let item = model.checklistItems.first(where: { $0.id == draggedChecklistItemID }) {
-                        Text(item.text)
-                            .lineLimit(2)
-                            .frame(width: 520, alignment: .leading)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-                            .position(checklistDragLocation)
-                            .allowsHitTesting(false)
-                    }
-                }
-                .coordinateSpace(name: "checklistList")
-                .onPreferenceChange(ChecklistItemFramePreferenceKey.self) { checklistItemFrames = $0 }
-                .frame(height: checklistListHeight)
-
-                Button("Clear checklist", role: .destructive) {
-                    pendingClearTarget = .checklist
-                }
-                    .buttonStyle(.plain)
-                    .font(.app(.caption1))
-            }
-        }
-    }
-
-    private var checklistListHeight: CGFloat {
-        min(max(CGFloat(model.checklistItems.count) * 64, 64), 350)
-    }
-
     private var kanbanControls: some View {
         VStack(alignment: .center, spacing: 10) {
-            Label("Kanban board", systemImage: "rectangle.3.group")
+            Text("Kanban board")
                 .font(.app(.headline, weight: .semibold))
 
             HStack {
@@ -436,7 +310,7 @@ struct ContentView: View {
 
     private var notesControls: some View {
         VStack(alignment: .center, spacing: 10) {
-            Label("Quick notes", systemImage: "note.text")
+            Text("Quick notes")
                 .font(.app(.headline, weight: .semibold))
 
             HStack {
@@ -451,9 +325,6 @@ struct ContentView: View {
 
             if model.notes.isEmpty {
                 VStack(spacing: 6) {
-                    Image(systemName: "note.text")
-                        .font(.largeTitle)
-                        .foregroundStyle(.tertiary)
                     Text("Short notes you save will stay on this Mac.")
                         .font(.app(.caption1))
                         .foregroundStyle(.secondary)
@@ -512,14 +383,13 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Visible tools")
                 .font(.app(.headline, weight: .semibold))
-            Text("Choose which tabs appear in The Papaya Project. Hidden tool data is kept.")
+            Text("Choose which tabs appear in The Squeeze. Hidden tool data is kept.")
                 .font(.app(.caption1))
                 .foregroundStyle(.secondary)
 
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
                     settingsToolToggle("Timer", isOn: $showTimer)
-                    settingsToolToggle("Checklist", isOn: $showChecklist)
                     settingsToolToggle("Kanban", isOn: $showKanban)
                     settingsToolToggle("Notes", isOn: $showNotes)
                 }
@@ -599,10 +469,11 @@ struct ContentView: View {
         model.mode == .timer && model.hasSession
     }
 
-    private func selectDuration(minutes: Int) {
+    private func startPresetTimer(minutes: Int) {
         customHours = String(minutes / 60)
         customMinutes = String(minutes % 60)
         customSeconds = "0"
+        model.startTimer(minutes: minutes)
     }
 
     private func isSelectedDuration(_ minutes: Int) -> Bool {
@@ -630,54 +501,14 @@ struct ContentView: View {
         model.startTimer(seconds: seconds)
     }
 
-    private func addChecklistItem() {
-        model.addChecklistItem(newChecklistItem)
-        newChecklistItem = ""
-    }
-
     private func clear(_ target: ClearTarget) {
         switch target {
-        case .checklist:
-            model.clearChecklist()
         case .kanban:
             model.clearKanban()
         case .notes:
             model.clearNotes()
         }
         pendingClearTarget = nil
-    }
-
-    private var cleanedChecklistTitle: String {
-        checklistTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func saveChecklistTitle() {
-        guard !cleanedChecklistTitle.isEmpty else { return }
-        model.updateChecklistTitle(cleanedChecklistTitle)
-        checklistTitleDraft = model.checklistTitle
-        isEditingChecklistTitle = false
-    }
-
-    private func cancelChecklistTitleEdit() {
-        checklistTitleDraft = model.checklistTitle
-        isEditingChecklistTitle = false
-    }
-
-    private func updateChecklistDrag(id: UUID, location: CGPoint) {
-        draggedChecklistItemID = id
-        checklistDragLocation = location
-    }
-
-    private func finishChecklistDrag(id: UUID, location: CGPoint) {
-        let destinationID = model.checklistItems
-            .filter { $0.id != id }
-            .first { checklistItemFrames[$0.id].map { location.y < $0.midY } ?? false }?
-            .id
-        withAnimation(.spring(response: 0.36, dampingFraction: 0.78)) {
-            model.moveChecklistItem(id: id, before: destinationID)
-        }
-        draggedChecklistItemID = nil
-        checklistDragLocation = nil
     }
 
     private func addKanbanCard() {
@@ -737,8 +568,6 @@ struct ContentView: View {
         switch tool {
         case .timer:
             model.activateTimerIfAvailable()
-        case .checklist:
-            model.activateChecklist()
         case .kanban:
             model.activateKanban()
         case .notes:
@@ -747,9 +576,7 @@ struct ContentView: View {
     }
 
     private func selectInitialTool() {
-        if model.mode == .checklist, showChecklist {
-            selectedTool = .checklist
-        } else if model.mode == .kanban, showKanban {
+        if model.mode == .kanban, showKanban {
             selectedTool = .kanban
         } else {
             ensureVisibleSelection()
@@ -971,7 +798,7 @@ private struct PapayaGrinderFrame: View {
     ) {
         if isRunning {
             for index in 0..<3 {
-                let cycle = fraction(time * 0.42 + CGFloat(index) * 0.33)
+                let cycle = fraction(time * 0.28 + CGFloat(index) * 0.33)
                 let entryOffset = CGFloat(index - 1) * 22
                 let fallProgress = min(cycle / 0.5, 1)
                 let gravityProgress = fallProgress * fallProgress
@@ -1364,135 +1191,6 @@ private struct PapayaJuiceFrame: View, Animatable {
 
     private func fraction(_ value: CGFloat) -> CGFloat {
         value - floor(value)
-    }
-}
-
-private struct ChecklistRow: View {
-    let item: ChecklistItem
-    let isBeingDragged: Bool
-    let onDragChanged: (CGPoint) -> Void
-    let onDragEnded: (CGPoint) -> Void
-    let onToggle: () -> Void
-    let onSave: (String) -> Void
-    let onDelete: () -> Void
-    @State private var isHovering = false
-    @State private var isEditing = false
-    @State private var draftText: String
-
-    init(
-        item: ChecklistItem,
-        isBeingDragged: Bool,
-        onDragChanged: @escaping (CGPoint) -> Void,
-        onDragEnded: @escaping (CGPoint) -> Void,
-        onToggle: @escaping () -> Void,
-        onSave: @escaping (String) -> Void,
-        onDelete: @escaping () -> Void
-    ) {
-        self.item = item
-        self.isBeingDragged = isBeingDragged
-        self.onDragChanged = onDragChanged
-        self.onDragEnded = onDragEnded
-        self.onToggle = onToggle
-        self.onSave = onSave
-        self.onDelete = onDelete
-        _draftText = State(initialValue: item.text)
-    }
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "line.3.horizontal")
-                .foregroundStyle(.tertiary)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 4, coordinateSpace: .named("checklistList"))
-                        .onChanged { onDragChanged($0.location) }
-                        .onEnded { onDragEnded($0.location) }
-                )
-                .help("Drag to reorder")
-
-            Button(action: onToggle) {
-                Image(systemName: item.isCompleted ? "checkmark.square.fill" : "square")
-                    .font(.title3)
-                    .foregroundStyle(item.isCompleted ? Color.accentColor : .secondary)
-            }
-            .buttonStyle(.plain)
-
-            if isEditing {
-                TextField("Checklist item", text: $draftText)
-                    .textFieldStyle(.roundedBorder)
-                    .multilineTextAlignment(.center)
-                    .onSubmit(saveEdit)
-                Button(action: saveEdit) {
-                    Image(systemName: "checkmark")
-                }
-                .disabled(cleanedDraft.isEmpty)
-                .help("Save changes")
-                Button(action: cancelEdit) {
-                    Image(systemName: "xmark")
-                }
-                .help("Cancel")
-            } else {
-                Text(item.text)
-                    .strikethrough(item.isCompleted)
-                    .foregroundStyle(item.isCompleted ? .secondary : .primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                Button {
-                    draftText = item.text
-                    isEditing = true
-                } label: {
-                    Image(systemName: "pencil")
-                        .foregroundStyle(.secondary)
-                }
-                .opacity(isHovering ? 1 : 0)
-                .allowsHitTesting(isHovering)
-                .help("Edit item")
-
-                Button(action: onDelete) {
-                    Image(systemName: "trash")
-                        .foregroundStyle(.secondary)
-                }
-                .help("Delete item")
-            }
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
-        .background {
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: ChecklistItemFramePreferenceKey.self,
-                    value: [item.id: proxy.frame(in: .named("checklistList"))]
-                )
-            }
-        }
-        .onHover { isHovering = $0 }
-        .opacity(isBeingDragged ? 0.2 : 1)
-    }
-
-    private var cleanedDraft: String {
-        draftText.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func saveEdit() {
-        guard !cleanedDraft.isEmpty else { return }
-        onSave(cleanedDraft)
-        draftText = cleanedDraft
-        isEditing = false
-    }
-
-    private func cancelEdit() {
-        draftText = item.text
-        isEditing = false
-    }
-}
-
-private struct ChecklistItemFramePreferenceKey: PreferenceKey {
-    static var defaultValue: [UUID: CGRect] = [:]
-
-    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }
 

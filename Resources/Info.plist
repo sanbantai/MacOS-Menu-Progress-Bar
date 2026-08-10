@@ -11,7 +11,11 @@
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>The Papaya Project</string>
+    <string>The Squeeze</string>
+    <key>CFBundleDisplayName</key>
+    <string>The Squeeze</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon.icns</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

@@ -18,7 +18,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let popover = NSPopover()
     private var timer: Timer?
-    private var checklistWasComplete = false
     private var kanbanWasComplete = false
     private var timerCompletionIsVisible = false
     private let completionSound = NSSound(
@@ -35,7 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.sendAction(on: .leftMouseUp)
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleNone
-        button.toolTip = "The Papaya Project"
+        button.toolTip = "The Squeeze"
 
         popover.behavior = .transient
         popover.animates = true
@@ -43,7 +42,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hostingController.sizingOptions = [.preferredContentSize]
         popover.contentViewController = hostingController
 
-        checklistWasComplete = model.isChecklistComplete
         kanbanWasComplete = model.isKanbanComplete
         updateStatusItem()
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
@@ -69,10 +67,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateStatusItem() {
         let timedSessionCompleted = model.tick()
-        let checklistIsComplete = model.isChecklistComplete
         let kanbanIsComplete = model.isKanbanComplete
         if timedSessionCompleted
-            || (checklistIsComplete && !checklistWasComplete)
             || (kanbanIsComplete && !kanbanWasComplete) {
             completionSound?.stop()
             completionSound?.play()
@@ -82,11 +78,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if model.hasSession {
             timerCompletionIsVisible = false
         }
-        checklistWasComplete = checklistIsComplete
         kanbanWasComplete = kanbanIsComplete
 
-        let currentTaskIsComplete = (model.mode == .checklist && checklistIsComplete)
-            || (model.mode == .kanban && kanbanIsComplete)
+        let currentTaskIsComplete = model.mode == .kanban && kanbanIsComplete
         let displayCompleted = timerCompletionIsVisible || currentTaskIsComplete
 
         statusItem.button?.image = progressBarImage(

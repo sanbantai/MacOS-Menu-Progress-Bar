@@ -3,7 +3,7 @@ set -euo pipefail
 
 project_dir="${0:A:h:h}"
 configuration="${1:-release}"
-app_dir="$project_dir/dist/Menu Progress.app"
+app_dir="$project_dir/dist/The Squeeze.app"
 contents_dir="$app_dir/Contents"
 module_cache="$project_dir/.build/module-cache"
 
@@ -27,6 +27,7 @@ binary_dir="$(swift build --disable-sandbox -c "$configuration" --show-bin-path)
 mkdir -p "$contents_dir/MacOS" "$contents_dir/Resources"
 cp "$binary_dir/MenuProgress" "$contents_dir/MacOS/MenuProgress"
 cp "$project_dir/Resources/Info.plist" "$contents_dir/Info.plist"
+cp "$project_dir/Resources/AppIcon.icns" "$contents_dir/Resources/AppIcon.icns"
 
 codesign --force --deep --sign - "$app_dir"
 echo "Built: $app_dir"

@@ -2,6 +2,31 @@
 
 All notable changes to The Squeeze are documented here.
 
+## [0.0.3] - 2026-08-11
+
+### Added
+
+- A global **Control-Shift-S** shortcut for toggling the menu-bar popover.
+- **Control-1**, **Control-2**, and **Control-3** shortcuts for Kanban, Timer, and Notes.
+- A collapsible keyboard-shortcut reference in Settings.
+- A dedicated Kanban board progress bar with completed-card count and percentage.
+- An animated papaya, white, and black idle pattern in the menu bar.
+
+### Changed
+
+- Reordered the tools to Kanban, Timer, and Notes.
+- Gave Index, WIP, and Done stronger red, papaya, and green column treatments.
+- Made menu-bar progress timer-only, using a black track with papaya fill.
+- Made Kanban card and note creation Return-driven and renamed the timer prompt to “Squeeze Them Papayas.”
+- Centered note drag and delete controls vertically.
+- Allowed Notes to grow to the display’s usable height, then scroll by mouse or trackpad without a visible scrollbar.
+- Hid Kanban scroll indicators while preserving mouse and trackpad scrolling.
+
+### Removed
+
+- Visible Add and Save buttons from the Kanban and Notes entry fields.
+- The cursive rotating text from the menu-bar display.
+
 ## [0.0.2] - 2026-08-10
 
 ### Added

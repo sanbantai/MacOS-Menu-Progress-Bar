@@ -20,8 +20,8 @@ private extension Font {
 
 struct ContentView: View {
     private enum Tool: String, CaseIterable, Identifiable {
-        case timer = "Timer"
         case kanban = "Kanban"
+        case timer = "Timer"
         case notes = "Notes"
 
         var id: String { rawValue }
@@ -61,11 +61,13 @@ struct ContentView: View {
     @State private var draggedNoteID: UUID?
     @State private var noteDragLocation: CGPoint?
     @State private var noteFrames: [UUID: CGRect] = [:]
+    @State private var notesContentHeight: CGFloat = 82
     @State private var newKanbanCard = ""
     @State private var newNote = ""
     @State private var pendingClearTarget: ClearTarget?
     @State private var selectedTool: Tool = .timer
     @State private var showingSettings = false
+    @State private var showingShortcuts = false
 
     var body: some View {
         VStack(alignment: .center, spacing: 14) {
@@ -120,6 +122,10 @@ struct ContentView: View {
         .onChange(of: showTimer) { _ in ensureVisibleSelection() }
         .onChange(of: showKanban) { _ in ensureVisibleSelection() }
         .onChange(of: showNotes) { _ in ensureVisibleSelection() }
+        .onReceive(NotificationCenter.default.publisher(for: .selectToolShortcut)) { notification in
+            guard let shortcut = notification.userInfo?["shortcut"] as? Int else { return }
+            selectTool(for: shortcut)
+        }
     }
 
     private var visibleTools: [Tool] {
@@ -237,15 +243,15 @@ struct ContentView: View {
             Text("Kanban board")
                 .font(.app(.headline, weight: .semibold))
 
-            HStack {
-                TextField("Add a card to Index", text: $newKanbanCard)
-                    .textFieldStyle(.roundedBorder)
-                    .multilineTextAlignment(.center)
-                    .onSubmit(addKanbanCard)
-                Button("Add") { addKanbanCard() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(newKanbanCard.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
+            KanbanBoardProgressView(
+                completed: model.completedKanbanCount,
+                total: model.kanbanCards.count
+            )
+
+            TextField("Add a card to Index and press Return", text: $newKanbanCard)
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.center)
+                .onSubmit(addKanbanCard)
 
             ZStack(alignment: .topLeading) {
                 HStack(alignment: .top, spacing: 7) {
@@ -313,15 +319,10 @@ struct ContentView: View {
             Text("Quick notes")
                 .font(.app(.headline, weight: .semibold))
 
-            HStack {
-                TextField("Capture a short note", text: $newNote)
-                    .textFieldStyle(.roundedBorder)
-                    .multilineTextAlignment(.center)
-                    .onSubmit(addNote)
-                Button("Save") { addNote() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(newNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
+            TextField("Capture a short note and press Return", text: $newNote)
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.center)
+                .onSubmit(addNote)
 
             if model.notes.isEmpty {
                 VStack(spacing: 6) {
@@ -331,8 +332,8 @@ struct ContentView: View {
                 }
             } else {
                 ZStack(alignment: .topLeading) {
-                    ScrollView {
-                        LazyVStack(spacing: 7) {
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(spacing: 7) {
                             ForEach(model.notes) { note in
                                 NoteRow(
                                     note: note,
@@ -344,11 +345,20 @@ struct ContentView: View {
                                 )
                             }
                         }
+                        .background {
+                            GeometryReader { proxy in
+                                Color.clear.preference(
+                                    key: NotesContentHeightPreferenceKey.self,
+                                    value: proxy.size.height
+                                )
+                            }
+                        }
                         .animation(
                             .spring(response: 0.36, dampingFraction: 0.78),
                             value: model.notes.map(\.id)
                         )
                     }
+                    .frame(height: min(notesContentHeight, maximumNotesListHeight))
 
                     if let draggedNoteID,
                        let noteDragLocation,
@@ -364,7 +374,9 @@ struct ContentView: View {
                 }
                 .coordinateSpace(name: "notesList")
                 .onPreferenceChange(NoteFramePreferenceKey.self) { noteFrames = $0 }
-                .frame(height: notesListHeight)
+                .onPreferenceChange(NotesContentHeightPreferenceKey.self) {
+                    notesContentHeight = max($0, 1)
+                }
 
                 Button("Clear notes", role: .destructive) {
                     pendingClearTarget = .notes
@@ -375,8 +387,11 @@ struct ContentView: View {
         }
     }
 
-    private var notesListHeight: CGFloat {
-        min(max(CGFloat(model.notes.count) * 82, 82), 350)
+    private var maximumNotesListHeight: CGFloat {
+        let visibleScreenHeight = NSApp.keyWindow?.screen?.visibleFrame.height
+            ?? NSScreen.main?.visibleFrame.height
+            ?? 800
+        return max(140, visibleScreenHeight - 320)
     }
 
     private var settingsControls: some View {
@@ -389,8 +404,8 @@ struct ContentView: View {
 
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
-                    settingsToolToggle("Timer", isOn: $showTimer)
                     settingsToolToggle("Kanban", isOn: $showKanban)
+                    settingsToolToggle("Timer", isOn: $showTimer)
                     settingsToolToggle("Notes", isOn: $showNotes)
                 }
                 .toggleStyle(.switch)
@@ -402,8 +417,48 @@ struct ContentView: View {
             Text("Settings is always available at the bottom, even when every tool is hidden.")
                 .font(.app(.caption1))
                 .foregroundStyle(.secondary)
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    showingShortcuts.toggle()
+                }
+            } label: {
+                HStack {
+                    Text("Keyboard shortcuts")
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .rotationEffect(.degrees(showingShortcuts ? 90 : 0))
+                }
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .font(.app(.caption1, weight: .semibold))
+            .foregroundStyle(.secondary)
+
+            if showingShortcuts {
+                VStack(spacing: 8) {
+                    shortcutRow("Open The Squeeze", keys: "⌃⇧S")
+                    shortcutRow("Kanban", keys: "⌃1")
+                    shortcutRow("Timer", keys: "⌃2")
+                    shortcutRow("Notes", keys: "⌃3")
+                }
+                .padding(.leading, 14)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
         }
         .frame(maxWidth: 520, alignment: .topLeading)
+    }
+
+    private func shortcutRow(_ title: String, keys: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(keys)
+                .monospaced()
+                .foregroundStyle(.primary)
+        }
+        .font(.app(.caption2))
     }
 
     private func settingsToolToggle(_ title: String, isOn: Binding<Bool>) -> some View {
@@ -575,6 +630,20 @@ struct ContentView: View {
         }
     }
 
+    private func selectTool(for shortcut: Int) {
+        let tool: Tool
+        switch shortcut {
+        case 1: tool = .kanban
+        case 2: tool = .timer
+        case 3: tool = .notes
+        default: return
+        }
+        guard visibleTools.contains(tool) else { return }
+        showingSettings = false
+        selectedTool = tool
+        activate(tool)
+    }
+
     private func selectInitialTool() {
         if model.mode == .kanban, showKanban {
             selectedTool = .kanban
@@ -636,7 +705,7 @@ private struct TimerGoButton: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text(isActive ? "Squeezing Your Papayas.." : "Papaya Juice?")
+            Text(isActive ? "Squeezing Your Papayas.." : "Squeeze Them Papayas")
                 .font(.app(.caption1, weight: .bold))
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 4)
@@ -1194,6 +1263,78 @@ private struct PapayaJuiceFrame: View, Animatable {
     }
 }
 
+private struct KanbanBoardProgressView: View {
+    let completed: Int
+    let total: Int
+
+    private let papaya = Color(red: 1, green: 0.48, blue: 0.18)
+    private let papayaGold = Color(red: 1, green: 0.72, blue: 0.24)
+    private let doneGreen = Color(red: 0.20, green: 0.68, blue: 0.38)
+
+    private var progress: Double {
+        guard total > 0 else { return 0 }
+        return min(max(Double(completed) / Double(total), 0), 1)
+    }
+
+    var body: some View {
+        VStack(spacing: 5) {
+            HStack {
+                Label("Board progress", systemImage: "chart.bar.fill")
+                    .font(.app(.caption1, weight: .semibold))
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Text("\(completed) of \(total) done  ·  \(Int((progress * 100).rounded()))%")
+                    .font(.app(.caption2, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(progress == 1 ? doneGreen : .secondary)
+            }
+
+            GeometryReader { proxy in
+                let fillWidth = proxy.size.width * progress
+
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(.black.opacity(0.88))
+
+                    if fillWidth > 0 {
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [papaya, papayaGold, doneGreen],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(width: fillWidth)
+                            .overlay(alignment: .top) {
+                                Capsule()
+                                    .fill(.white.opacity(0.22))
+                                    .frame(height: 3)
+                                    .padding(.horizontal, 4)
+                                    .padding(.top, 2)
+                            }
+                            .shadow(
+                                color: (progress == 1 ? doneGreen : papaya).opacity(0.34),
+                                radius: 5
+                            )
+                    }
+
+                    Capsule()
+                        .stroke(.white.opacity(0.28), lineWidth: 1)
+                }
+            }
+            .frame(height: 18)
+            .animation(.spring(response: 0.42, dampingFraction: 0.8), value: progress)
+        }
+        .padding(.horizontal, 2)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Kanban board progress")
+        .accessibilityValue("\(completed) of \(total) cards done")
+    }
+}
+
 private struct KanbanColumnView: View {
     let column: KanbanColumn
     let cards: [KanbanCard]
@@ -1208,9 +1349,17 @@ private struct KanbanColumnView: View {
     var body: some View {
         VStack(spacing: 6) {
             ZStack {
-                Text(column.rawValue)
-                    .font(.app(.caption1, weight: .semibold))
-                    .frame(maxWidth: .infinity, alignment: .center)
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(columnTint)
+                        .frame(width: 9, height: 9)
+                    Text(column.rawValue)
+                        .font(.app(.caption1, weight: .semibold))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 3)
+                .background(columnTint.opacity(0.32), in: Capsule())
+                .frame(maxWidth: .infinity, alignment: .center)
 
                 HStack {
                     Spacer(minLength: 0)
@@ -1229,7 +1378,7 @@ private struct KanbanColumnView: View {
                     .frame(maxHeight: .infinity, alignment: .top)
                     .padding(.top, 8)
             } else {
-                ScrollView {
+                ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(spacing: 6) {
                         ForEach(cards) { card in
                             KanbanCardView(
@@ -1252,7 +1401,7 @@ private struct KanbanColumnView: View {
             }
         }
         .padding(8)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 9))
+        .background(columnTint.opacity(0.24), in: RoundedRectangle(cornerRadius: 9))
         .background {
             GeometryReader { proxy in
                 Color.clear.preference(
@@ -1263,7 +1412,21 @@ private struct KanbanColumnView: View {
         }
         .overlay {
             RoundedRectangle(cornerRadius: 9)
-                .stroke(isDropTargeted ? Color.accentColor : .clear, lineWidth: 2)
+                .stroke(
+                    isDropTargeted ? columnTint : columnTint.opacity(0.72),
+                    lineWidth: isDropTargeted ? 3 : 1.5
+                )
+        }
+    }
+
+    private var columnTint: Color {
+        switch column {
+        case .index:
+            return Color(red: 0.82, green: 0.22, blue: 0.25)
+        case .wip:
+            return Color(red: 0.96, green: 0.49, blue: 0.22)
+        case .done:
+            return Color(red: 0.20, green: 0.62, blue: 0.36)
         }
     }
 }
@@ -1433,7 +1596,7 @@ private struct NoteRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .center, spacing: 10) {
             Image(systemName: "line.3.horizontal")
                 .foregroundStyle(.tertiary)
                 .contentShape(Rectangle())
@@ -1449,11 +1612,6 @@ private struct NoteRow: View {
                     .textFieldStyle(.roundedBorder)
                     .multilineTextAlignment(.center)
                     .onSubmit(saveEdit)
-                Button(action: saveEdit) {
-                    Image(systemName: "checkmark")
-                }
-                .disabled(cleanedDraft.isEmpty)
-                .help("Save changes")
                 Button(action: cancelEdit) {
                     Image(systemName: "xmark")
                 }
@@ -1524,5 +1682,13 @@ private struct NoteFramePreferenceKey: PreferenceKey {
 
     static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
         value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+private struct NotesContentHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

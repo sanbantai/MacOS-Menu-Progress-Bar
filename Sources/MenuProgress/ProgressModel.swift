@@ -95,6 +95,11 @@ final class ProgressModel: ObservableObject {
         !kanbanCards.isEmpty && completedKanbanCount == kanbanCards.count
     }
 
+    var kanbanProgress: Double {
+        guard !kanbanCards.isEmpty else { return 0 }
+        return Double(completedKanbanCount) / Double(kanbanCards.count)
+    }
+
     var totalDuration: TimeInterval {
         guard let startDate, let endDate else { return 0 }
         return max(endDate.timeIntervalSince(startDate), 1)
@@ -110,7 +115,7 @@ final class ProgressModel: ObservableObject {
         guard hasSession else { return 0 }
         switch mode {
         case .kanban:
-            return Double(completedKanbanCount) / Double(kanbanCards.count)
+            return kanbanProgress
         case .timer:
             return min(max(1 - remaining / totalDuration, 0), 1)
         }

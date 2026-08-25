@@ -2,6 +2,19 @@
 
 All notable changes to The Squeeze are documented here.
 
+## [1.0] - 2026-08-25
+
+### Changed
+
+- Replaced the circular papaya application icon with the orange progress-bar logo.
+- Reserved fixed layout space for the sound control and timer status so the popover never resizes between states.
+- Showed an infinity symbol above the idle bar, replaced by remaining time once a timer starts.
+- Prevented the Hours field from being selected automatically when the popover opens.
+
+### Removed
+
+- The idle “Ready” label.
+
 ## [0.0.4] - 2026-08-25
 
 ### Changed

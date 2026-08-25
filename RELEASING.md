@@ -9,7 +9,7 @@ This checklist prepares and publishes a GitHub release from `main`.
 - `README.md`, `CHANGELOG.md`, `PRIVACY.md`, `SECURITY.md`, and `RELEASE_NOTES.md` describe the shipped behavior.
 - The working tree contains no unrelated changes.
 
-For v0.0.4, the marketing version is `0.0.4` and the bundle build is `10`.
+For v1.0, the marketing version is `1.0` and the bundle build is `12`.
 
 ## 2. Build and verify
 
@@ -23,10 +23,10 @@ plutil -extract CFBundleShortVersionString raw "dist/The Squeeze.app/Contents/In
 
 ```sh
 cd dist
-ditto -c -k --sequesterRsrc --keepParent "The Squeeze.app" "The-Squeeze-v0.0.4.zip"
-shasum -a 256 "The-Squeeze-v0.0.4.zip" > "The-Squeeze-v0.0.4.zip.sha256"
-shasum -a 256 -c "The-Squeeze-v0.0.4.zip.sha256"
-unzip -t "The-Squeeze-v0.0.4.zip"
+ditto -c -k --sequesterRsrc --keepParent "The Squeeze.app" "The-Squeeze-v1.0.zip"
+shasum -a 256 "The-Squeeze-v1.0.zip" > "The-Squeeze-v1.0.zip.sha256"
+shasum -a 256 -c "The-Squeeze-v1.0.zip.sha256"
+unzip -t "The-Squeeze-v1.0.zip"
 cd ..
 ```
 
@@ -36,10 +36,10 @@ Review `git diff` before running these commands:
 
 ```sh
 git add -A
-git commit -m "Release v0.0.4"
-git tag -a v0.0.4 -m "The Squeeze v0.0.4"
+git commit -m "Release v1.0"
+git tag -a v1.0 -m "The Squeeze v1.0"
 git push origin main
-git push origin v0.0.4
+git push origin v1.0
 ```
 
 ## 5. Create the GitHub release
@@ -47,10 +47,10 @@ git push origin v0.0.4
 With GitHub CLI installed and authenticated:
 
 ```sh
-gh release create v0.0.4 \
-  "dist/The-Squeeze-v0.0.4.zip" \
-  "dist/The-Squeeze-v0.0.4.zip.sha256" \
-  --title "The Squeeze v0.0.4" \
+gh release create v1.0 \
+  "dist/The-Squeeze-v1.0.zip" \
+  "dist/The-Squeeze-v1.0.zip.sha256" \
+  --title "The Squeeze v1.0" \
   --notes-file RELEASE_NOTES.md
 ```
 

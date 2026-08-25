@@ -12,6 +12,8 @@ private extension Font {
 }
 
 struct ContentView: View {
+    private let contentWidth: CGFloat = 464
+
     private enum DurationField: Hashable {
         case hours
         case minutes
@@ -25,9 +27,10 @@ struct ContentView: View {
     @FocusState private var focusedDurationField: DurationField?
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(alignment: .center, spacing: 16) {
             Text("The Squeeze")
                 .font(.app(.headline, weight: .semibold))
+                .frame(maxWidth: .infinity, alignment: .center)
                 .onTapGesture(perform: dismissDurationFocus)
 
             Rectangle()
@@ -44,6 +47,7 @@ struct ContentView: View {
 
             footer
         }
+        .frame(width: contentWidth, alignment: .center)
         .padding(18)
         .frame(width: 500)
         .fixedSize(horizontal: false, vertical: true)
@@ -55,36 +59,48 @@ struct ContentView: View {
     }
 
     private var timerControls: some View {
-        VStack(spacing: 14) {
+        VStack(alignment: .center, spacing: 14) {
             TimelineView(.animation(minimumInterval: 1.0 / 120.0, paused: !model.isRunning)) { _ in
-                VStack(spacing: 10) {
+                VStack(alignment: .center, spacing: 10) {
+                    Text(timerStatusText)
+                        .font(.app(.title3, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(model.isShowingCompletion ? Color.green : Color.primary)
+                        .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28, alignment: .center)
+
                     TimerProgressBar(
                         progress: model.displayProgress,
                         fillColor: model.isShowingCompletion ? .green : papayaOrange,
                         showsFill: model.hasSession || model.isShowingCompletion
                     )
-
-                    Text(timerStatusText)
-                        .font(.app(.title3, weight: .semibold))
-                        .foregroundStyle(model.isShowingCompletion ? Color.green : Color.primary)
                 }
+                .frame(maxWidth: .infinity, alignment: .center)
             }
+            .frame(maxWidth: .infinity, alignment: .center)
             .contentShape(Rectangle())
             .onTapGesture(perform: dismissDurationFocus)
 
-            HStack(alignment: .bottom, spacing: 8) {
-                durationField("Hours", text: $customHours, field: .hours)
-                Text(":")
-                    .font(.app(.title3, weight: .semibold))
-                    .padding(.bottom, 5)
-                    .onTapGesture(perform: dismissDurationFocus)
-                durationField("Minutes", text: $customMinutes, field: .minutes)
-                Text(":")
-                    .font(.app(.title3, weight: .semibold))
-                    .padding(.bottom, 5)
-                    .onTapGesture(perform: dismissDurationFocus)
-                durationField("Seconds", text: $customSeconds, field: .seconds)
+            Grid(horizontalSpacing: 8, verticalSpacing: 14) {
+                GridRow(alignment: .bottom) {
+                    durationField("Hours", text: $customHours, field: .hours)
+                    durationSeparator
+                    durationField("Minutes", text: $customMinutes, field: .minutes)
+                    durationSeparator
+                    durationField("Seconds", text: $customSeconds, field: .seconds)
+                }
+
+                if !model.hasSession {
+                    GridRow {
+                        gridPlaceholder
+                        gridPlaceholder
+                        startTimerButton
+                        gridPlaceholder
+                        gridPlaceholder
+                    }
+                }
             }
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(maxWidth: .infinity, alignment: .center)
             .disabled(model.hasSession)
             .background {
                 Color.clear
@@ -109,17 +125,11 @@ struct ContentView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(.black)
                 }
-            } else {
-                Button("Start Timer") {
-                    startCustomTimer()
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(papayaOrange)
-                .foregroundStyle(.black)
-                .disabled(parsedDurationSeconds == nil)
-                .keyboardShortcut(.return, modifiers: [])
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
         }
+        .frame(width: contentWidth, alignment: .center)
     }
 
     private var timerStatusText: String {
@@ -131,13 +141,14 @@ struct ContentView: View {
                 ? "Paused — \(model.shortRemaining) remaining"
                 : model.shortRemaining
         }
-        return "Ready"
+        return "∞"
     }
 
     private var footer: some View {
         ZStack {
             Text("Data stays on this Mac")
                 .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .center)
                 .onTapGesture(perform: dismissDurationFocus)
 
             HStack {
@@ -147,8 +158,10 @@ struct ContentView: View {
                 } label: {
                     Image(systemName: model.isCompletionSoundEnabled ? "bell.fill" : "bell.slash.fill")
                         .foregroundStyle(model.isCompletionSoundEnabled ? Color.secondary : Color.red)
+                        .frame(width: 18, height: 18)
                 }
                 .buttonStyle(.plain)
+                .frame(width: 24, height: 24)
                 .focusable(false)
                 .help(model.isCompletionSoundEnabled ? "Completion sound on" : "Completion sound off")
                 .accessibilityLabel(
@@ -164,10 +177,39 @@ struct ContentView: View {
             }
         }
         .font(.app(.caption1))
+        .frame(width: contentWidth)
     }
 
     private var papayaOrange: Color {
         Color(red: 1, green: 0.48, blue: 0.18)
+    }
+
+    private var durationSeparator: some View {
+        Text(":")
+            .font(.app(.title3, weight: .semibold))
+            .padding(.bottom, 5)
+            .onTapGesture(perform: dismissDurationFocus)
+    }
+
+    private var gridPlaceholder: some View {
+        Color.clear
+            .frame(height: 0)
+            .gridCellUnsizedAxes(.horizontal)
+    }
+
+    private var startTimerButton: some View {
+        Button {
+            startCustomTimer()
+        } label: {
+            Text("Start Timer")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent)
+        .frame(width: 93.6)
+        .offset(x: 0.8)
+        .tint(papayaOrange)
+        .foregroundStyle(.black)
+        .disabled(parsedDurationSeconds == nil)
     }
 
     private func durationField(
@@ -179,6 +221,7 @@ struct ContentView: View {
             Text(label)
                 .font(.app(.caption2))
                 .foregroundStyle(.secondary)
+                .frame(width: 92, alignment: .center)
                 .onTapGesture(perform: dismissDurationFocus)
             TextField("", text: text)
                 .textFieldStyle(.roundedBorder)
@@ -187,6 +230,7 @@ struct ContentView: View {
                 .focused($focusedDurationField, equals: field)
                 .onSubmit(startCustomTimer)
         }
+        .frame(width: 92, alignment: .center)
     }
 
     private var parsedDurationSeconds: Int? {

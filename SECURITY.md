@@ -6,8 +6,8 @@ Security fixes are provided for the latest published version of The Squeeze.
 
 | Version | Supported |
 | --- | --- |
-| 0.0.2 | Yes |
-| 0.0.1 and earlier | No |
+| 1.0 | Yes |
+| Earlier versions | No |
 
 ## Release artifacts
 

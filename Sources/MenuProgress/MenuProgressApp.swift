@@ -192,7 +192,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             NSApp.activate(ignoringOtherApps: true)
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
+            if let window = popover.contentViewController?.view.window {
+                window.makeKey()
+                DispatchQueue.main.async { [weak window] in
+                    window?.makeFirstResponder(nil)
+                }
+            }
         }
         updateStatusItem()
     }

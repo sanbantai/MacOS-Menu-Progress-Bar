@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Effective: August 10, 2026
+Effective: August 25, 2026
 
 The Squeeze is designed to work locally on your Mac. It has no user accounts, advertising, analytics, tracking, or third-party SDKs, and it does not transmit your data to the developer or an external service.
 

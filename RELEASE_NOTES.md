@@ -1,35 +1,38 @@
-# The Squeeze v0.0.3
+# The Squeeze v0.0.4
 
-The Squeeze v0.0.3 makes the menu-bar workspace faster to open, easier to navigate, and clearer about timer and Kanban progress.
+The Squeeze v0.0.4 turns the app into a focused, minimal menu-bar timer with continuous progress and no workspace tools.
 
 ## Highlights
 
-- Toggle The Squeeze from anywhere with **Control-Shift-S**.
-- Switch directly to Kanban, Timer, or Notes with **Control-1**, **Control-2**, and **Control-3**.
-- Use the new Kanban-first tool order and reveal the shortcut reference from Settings only when needed.
-- See a papaya, white, and black animated menu-bar pattern while idle, replaced by a black timer track with papaya progress while a timer is active.
-- Track Kanban completion inside the board with stronger red, papaya, and green columns plus a dedicated progress bar.
-- Create Kanban cards and save notes with Return—no separate Add or Save buttons.
-- Let multiline Notes grow to the display’s usable height, then continue with indicator-free mouse or trackpad scrolling.
-- Enjoy vertically centered note controls and the new “Squeeze Them Papayas” timer prompt.
+- Use a streamlined timer-only interface with blank Hours, Minutes, and Seconds fields.
+- Watch one continuous, display-synchronized progress animation over the timer's exact duration.
+- See a completely empty, motionless bar while idle.
+- See the completed bar turn green for 10 seconds before returning to empty.
+- Pause, resume, or stop an active timer.
+- Click outside a duration field to dismiss its text selection.
+- Toggle the completion sound with a persistent bell control; the muted state uses a red crossed-out bell.
+- Open The Squeeze from anywhere with **Control-Shift-S**.
+
+## Removed
+
+- Kanban boards and their progress tracking.
+- Quick notes.
+- Tool visibility settings and tool-switching shortcuts.
+- Preset timer buttons and papaya timer animations.
 
 ## Upgrade notes
 
-This update preserves existing timers, Kanban cards, notes, and visibility settings. It does not add accounts, analytics, permissions, third-party SDKs, or network requests.
+Active and paused timers continue to restore after restarting the app. Data saved by the removed Kanban and Notes tools is no longer used, but remains in macOS preferences unless the preferences domain is deleted manually.
+
+The Squeeze remains local-only, with no accounts, analytics, permissions, third-party SDKs, or network requests.
 
 ## Installation
 
-1. Download `The-Squeeze-v0.0.3.zip` and `The-Squeeze-v0.0.3.zip.sha256`.
+1. Download `The-Squeeze-v0.0.4.zip` and `The-Squeeze-v0.0.4.zip.sha256`.
 2. Verify the checksum:
 
    ```sh
-   shasum -a 256 -c The-Squeeze-v0.0.3.zip.sha256
-   ```
-
-   Expected SHA-256:
-
-   ```text
-   493beb52b7a3bed38223f82ecfe7fcdc399bf207416f848e514e2aa36702b347
+   shasum -a 256 -c The-Squeeze-v0.0.4.zip.sha256
    ```
 
 3. Unzip the archive and move **The Squeeze.app** to `/Applications`.

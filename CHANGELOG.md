@@ -2,7 +2,7 @@
 
 All notable changes to The Squeeze are documented here.
 
-## Unreleased
+## [0.0.4] - 2026-08-25
 
 ### Changed
 

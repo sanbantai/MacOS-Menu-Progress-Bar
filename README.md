@@ -6,7 +6,7 @@
 
 The Squeeze is a private, native macOS menu-bar focus timer that turns time into visible progress without creating an account or sending data off your Mac.
 
-Latest published release: **v0.0.3**. The timer-only redesign on this branch is currently unreleased.
+Current release: **v0.0.4**.
 
 ## Features
 
@@ -21,7 +21,7 @@ Latest published release: **v0.0.3**. The timer-only redesign on this branch is 
 
 ## Install a release
 
-1. Download `The-Squeeze-v0.0.3.zip` from the GitHub Releases page.
+1. Download `The-Squeeze-v0.0.4.zip` from the GitHub Releases page.
 2. Unzip it and move **The Squeeze.app** to `/Applications`.
 3. Open the app. It lives in the menu bar rather than showing a normal running-app Dock icon.
 
@@ -53,7 +53,7 @@ See the [Privacy Policy](PRIVACY.md) for stored-data and deletion details.
 
 ## Release information
 
-- [v0.0.3 release notes](RELEASE_NOTES.md)
+- [v0.0.4 release notes](RELEASE_NOTES.md)
 - [Changelog](CHANGELOG.md)
 - [Release checklist](RELEASING.md)
 - [Security Policy](SECURITY.md)

@@ -4,25 +4,20 @@
 
 # The Squeeze
 
-The Squeeze is a private, native macOS menu-bar workspace for turning time and tasks into visible progress. Start a focus timer, move work across a Kanban board, or keep quick notes—all without creating an account or sending data off your Mac.
+The Squeeze is a private, native macOS menu-bar focus timer that turns time into visible progress without creating an account or sending data off your Mac.
 
-Current release: **v0.0.3**
+Latest published release: **v0.0.3**. The timer-only redesign on this branch is currently unreleased.
 
 ## Features
 
 - Toggle The Squeeze from anywhere with **Control-Shift-S**.
-- Switch between **Kanban**, **Timer**, and **Notes** with **Control-1**, **Control-2**, and **Control-3**.
-- Reveal a compact shortcut reference from Settings when needed.
-- Start 5, 15, 60, or 90-minute timers with one click.
-- Enter a custom duration and press Return or **GO!** to start.
-- Watch the papaya grinder and juice glass fill smoothly with timer progress.
-- Keep timer progress visible in the menu bar as papaya fills a black track.
-- See an animated papaya, white, and black idle pattern when no timer is active.
-- Create Kanban cards with Return, then move them between persistent red **Index**, papaya **WIP**, and green **Done** columns with animated drag-and-drop and a dedicated board progress bar.
-- Save notes with Return, then edit, reorder, and delete them; the list grows to the usable screen height before enabling scrollbar-free trackpad or mouse scrolling.
-- Choose which Kanban, Timer, and Notes tabs are visible.
-- Confirm destructive clear actions with **Are You Sure Buddy?** before data is removed.
-- Restore active timers and local workspace data after restarting the app.
+- Enter a custom duration and press Return or **Start Timer**.
+- Pause, resume, or stop an active timer.
+- See an empty, motionless menu-bar track while idle.
+- Watch the track fill as the timer advances.
+- See the completed bar turn green for 10 seconds, then return to empty.
+- Toggle the timer-completion sound from the bell control.
+- Restore an active or paused timer after restarting the app.
 
 ## Install a release
 
@@ -52,7 +47,7 @@ The packaged app is an accessory app (`LSUIElement`): it is controlled from the 
 
 ## Data and privacy
 
-The Squeeze has no accounts, analytics, ads, tracking, third-party SDKs, or network requests. Timer state, Kanban cards, notes, and visibility settings are stored locally in macOS preferences.
+The Squeeze has no accounts, analytics, ads, tracking, third-party SDKs, or network requests. Active timer state is stored locally in macOS preferences.
 
 See the [Privacy Policy](PRIVACY.md) for stored-data and deletion details.
 

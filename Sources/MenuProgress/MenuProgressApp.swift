@@ -1,9 +1,102 @@
 import AppKit
 import Carbon
+import QuartzCore
 import SwiftUI
 
-extension Notification.Name {
-    static let selectToolShortcut = Notification.Name("selectToolShortcut")
+@MainActor
+private final class StatusProgressBarView: NSView {
+    private let trackLayer = CALayer()
+    private let fillLayer = CALayer()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+
+        wantsLayer = true
+        layer?.addSublayer(trackLayer)
+        trackLayer.addSublayer(fillLayer)
+
+        trackLayer.backgroundColor = NSColor.black.cgColor
+        trackLayer.borderColor = NSColor.white.cgColor
+        trackLayer.borderWidth = 1.5
+        trackLayer.cornerRadius = frameRect.height / 2
+        trackLayer.masksToBounds = true
+        fillLayer.backgroundColor = NSColor.clear.cgColor
+        updateLayerGeometry()
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func layout() {
+        super.layout()
+        updateLayerGeometry()
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    func showIdle() {
+        setStaticProgress(0, color: .clear)
+    }
+
+    func showRunning(progress: Double, remaining: TimeInterval) {
+        let clampedProgress = min(max(progress, 0), 1)
+        fillLayer.removeAllAnimations()
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        fillLayer.backgroundColor = NSColor(
+            srgbRed: 1,
+            green: 0.48,
+            blue: 0.18,
+            alpha: 1
+        ).cgColor
+        fillLayer.transform = CATransform3DIdentity
+        CATransaction.commit()
+
+        let animation = CABasicAnimation(keyPath: "transform.scale.x")
+        animation.fromValue = clampedProgress
+        animation.toValue = 1
+        animation.duration = max(remaining, 0.001)
+        animation.timingFunction = CAMediaTimingFunction(name: .linear)
+        animation.isRemovedOnCompletion = true
+        fillLayer.add(animation, forKey: "timerProgress")
+    }
+
+    func showPaused(progress: Double) {
+        setStaticProgress(
+            progress,
+            color: NSColor(srgbRed: 1, green: 0.48, blue: 0.18, alpha: 1)
+        )
+    }
+
+    func showComplete() {
+        setStaticProgress(1, color: .systemGreen)
+    }
+
+    private func setStaticProgress(_ progress: Double, color: NSColor) {
+        fillLayer.removeAllAnimations()
+        let clampedProgress = min(max(progress, 0), 1)
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        fillLayer.backgroundColor = color.cgColor
+        fillLayer.transform = CATransform3DMakeScale(clampedProgress, 1, 1)
+        CATransaction.commit()
+    }
+
+    private func updateLayerGeometry() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        trackLayer.frame = bounds
+        trackLayer.cornerRadius = bounds.height / 2
+        fillLayer.anchorPoint = CGPoint(x: 0, y: 0.5)
+        fillLayer.bounds = trackLayer.bounds
+        fillLayer.position = CGPoint(x: 0, y: trackLayer.bounds.midY)
+        CATransaction.commit()
+    }
 }
 
 @main
@@ -19,15 +112,24 @@ struct MenuProgressApplication: App {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private enum BarState: Equatable {
+        case idle
+        case running(endDate: Date)
+        case paused(progress: Double)
+        case complete
+    }
+
     private let model = ProgressModel()
     private var statusItem: NSStatusItem!
     private let popover = NSPopover()
     private var timer: Timer?
     private var globalHotKey: EventHotKeyRef?
     private var globalHotKeyHandler: EventHandlerRef?
-    private var localKeyMonitor: Any?
-    private var kanbanWasComplete = false
-    private var timerCompletionIsVisible = false
+    private var lastRenderedBarState: BarState?
+    private var lastAccessibilityText: String?
+    private let statusProgressBar = StatusProgressBarView(
+        frame: NSRect(x: 4, y: 0, width: 252, height: 18)
+    )
     private let completionSound = NSSound(
         contentsOfFile: "/System/Library/Sounds/Glass.aiff",
         byReference: true
@@ -41,9 +143,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.target = self
         button.action = #selector(togglePopover)
         button.sendAction(on: .leftMouseUp)
-        button.imagePosition = .imageOnly
-        button.imageScaling = .scaleNone
         button.toolTip = "The Squeeze — ⌃⇧S"
+        statusProgressBar.frame.origin.y = floor((button.bounds.height - statusProgressBar.frame.height) / 2)
+        statusProgressBar.autoresizingMask = [.minYMargin, .maxYMargin]
+        button.addSubview(statusProgressBar)
 
         popover.behavior = .transient
         popover.animates = true
@@ -52,18 +155,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.contentViewController = hostingController
 
         installGlobalHotKey()
-        installToolShortcutMonitor()
 
-        kanbanWasComplete = model.isKanbanComplete
         updateStatusItem()
-        timer = Timer.scheduledTimer(
-            timeInterval: 1.0 / 20.0,
+        let refreshTimer = Timer(
+            timeInterval: 1.0 / 120.0,
             target: self,
             selector: #selector(refreshStatusItem),
             userInfo: nil,
             repeats: true
         )
-        timer?.tolerance = 1.0 / 100.0
+        refreshTimer.tolerance = 0
+        RunLoop.main.add(refreshTimer, forMode: .common)
+        timer = refreshTimer
     }
 
     private func installBundledAppIcon() {
@@ -79,9 +182,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let globalHotKeyHandler {
             RemoveEventHandler(globalHotKeyHandler)
-        }
-        if let localKeyMonitor {
-            NSEvent.removeMonitor(localKeyMonitor)
         }
     }
 
@@ -129,160 +229,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    private func installToolShortcutMonitor() {
-        localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            let relevantFlags = event.modifierFlags.intersection([.command, .control, .option, .shift])
-            guard relevantFlags == .control,
-                  let key = event.charactersIgnoringModifiers,
-                  let shortcut = Int(key),
-                  (1...3).contains(shortcut) else { return event }
-
-            NotificationCenter.default.post(
-                name: .selectToolShortcut,
-                object: nil,
-                userInfo: ["shortcut": shortcut]
-            )
-            return nil
-        }
-    }
-
     @objc private func refreshStatusItem() {
         updateStatusItem()
     }
 
     private func updateStatusItem() {
-        let timedSessionCompleted = model.tick(notifyObservers: popover.isShown)
-        let kanbanIsComplete = model.isKanbanComplete
-        if timedSessionCompleted
-            || (kanbanIsComplete && !kanbanWasComplete) {
+        if model.tick(notifyObservers: false), model.isCompletionSoundEnabled {
             completionSound?.stop()
             completionSound?.play()
         }
-        if timedSessionCompleted {
-            timerCompletionIsVisible = true
-        } else if model.hasSession {
-            timerCompletionIsVisible = false
-        }
-        kanbanWasComplete = kanbanIsComplete
 
-        let timerHasProgress = model.mode == .timer && model.hasSession
-        let displayTimerProgress = timerCompletionIsVisible || timerHasProgress
-        let displayedProgress = timerCompletionIsVisible ? 1 : model.progress
-
-        statusItem.button?.image = autoreleasepool {
-            progressBarImage(
-                progress: displayedProgress,
-                active: displayTimerProgress
-            )
+        let barState: BarState
+        if model.isShowingCompletion {
+            barState = .complete
+        } else if model.isPaused {
+            barState = .paused(progress: model.progress)
+        } else if let endDate = model.endDate {
+            barState = .running(endDate: endDate)
+        } else {
+            barState = .idle
         }
-        statusItem.button?.setAccessibilityLabel(
-            timerHasProgress ? model.accessibilityText : "The Squeeze, ready"
-        )
+
+        if barState != lastRenderedBarState {
+            switch barState {
+            case .idle:
+                statusProgressBar.showIdle()
+            case .running:
+                statusProgressBar.showRunning(
+                    progress: model.progress,
+                    remaining: model.remaining
+                )
+            case .paused(let progress):
+                statusProgressBar.showPaused(progress: progress)
+            case .complete:
+                statusProgressBar.showComplete()
+            }
+            lastRenderedBarState = barState
+        }
+
+        let accessibilityText = model.accessibilityText
+        if accessibilityText != lastAccessibilityText {
+            statusItem.button?.setAccessibilityLabel(accessibilityText)
+            lastAccessibilityText = accessibilityText
+        }
     }
 
-    private func progressBarImage(
-        progress: Double,
-        active: Bool
-    ) -> NSImage {
-        let width: CGFloat = 252
-        let height: CGFloat = 18
-        let barHeight: CGFloat = 18
-        let barRect = NSRect(x: 0, y: (height - barHeight) / 2, width: width, height: barHeight)
-        let image = NSImage(size: NSSize(width: width, height: height))
-        let clampedProgress = min(max(progress, 0), 1)
-        let filledWidth = active ? width * clampedProgress : 0
-        let filledRect = NSRect(x: 0, y: barRect.minY, width: filledWidth, height: barHeight)
-        let papayaOrange = NSColor(srgbRed: 1, green: 0.48, blue: 0.18, alpha: 1)
-
-        image.lockFocus()
-        let track = NSBezierPath(roundedRect: barRect, xRadius: 9, yRadius: 9)
-        NSColor.black.setFill()
-        track.fill()
-        NSColor.white.setStroke()
-        track.lineWidth = 1.5
-        track.stroke()
-
-        let elapsed = Date().timeIntervalSinceReferenceDate
-        if !active {
-            drawBarberPole(
-                in: barRect,
-                elapsed: elapsed,
-                baseColor: .white,
-                firstBandColor: papayaOrange,
-                secondBandColor: .black
-            )
-        }
-
-        if active, filledWidth > 0 {
-            NSGraphicsContext.current?.saveGraphicsState()
-            track.addClip()
-            papayaOrange.setFill()
-            NSBezierPath(rect: filledRect).fill()
-            NSGraphicsContext.current?.restoreGraphicsState()
-        }
-
-        NSColor.white.setStroke()
-        track.stroke()
-
-        image.unlockFocus()
-        image.isTemplate = false
-        return image
-    }
-
-    private func drawBarberPole(
-        in barRect: NSRect,
-        elapsed: TimeInterval,
-        baseColor: NSColor,
-        firstBandColor: NSColor,
-        secondBandColor: NSColor
-    ) {
-        let track = NSBezierPath(roundedRect: barRect, xRadius: 9, yRadius: 9)
-        NSGraphicsContext.current?.saveGraphicsState()
-        track.addClip()
-
-        baseColor.setFill()
-        NSBezierPath(rect: barRect).fill()
-
-        let bandWidth: CGFloat = 18
-        let cycleWidth = bandWidth * 4
-        let slant = barRect.height
-        let phase = CGFloat(elapsed * 30).truncatingRemainder(dividingBy: cycleWidth)
-        var cycleStart = barRect.minX - cycleWidth - slant + phase
-        while cycleStart < barRect.maxX + slant {
-            drawBarberBand(
-                from: cycleStart,
-                width: bandWidth,
-                slant: slant,
-                in: barRect,
-                color: firstBandColor
-            )
-            drawBarberBand(
-                from: cycleStart + bandWidth * 2,
-                width: bandWidth,
-                slant: slant,
-                in: barRect,
-                color: secondBandColor
-            )
-            cycleStart += cycleWidth
-        }
-
-        NSGraphicsContext.current?.restoreGraphicsState()
-    }
-
-    private func drawBarberBand(
-        from x: CGFloat,
-        width: CGFloat,
-        slant: CGFloat,
-        in rect: NSRect,
-        color: NSColor
-    ) {
-        let band = NSBezierPath()
-        band.move(to: NSPoint(x: x, y: rect.minY))
-        band.line(to: NSPoint(x: x + width, y: rect.minY))
-        band.line(to: NSPoint(x: x + width + slant, y: rect.maxY))
-        band.line(to: NSPoint(x: x + slant, y: rect.maxY))
-        band.close()
-        color.setFill()
-        band.fill()
-    }
 }

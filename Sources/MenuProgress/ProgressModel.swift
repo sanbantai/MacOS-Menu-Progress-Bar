@@ -1,103 +1,43 @@
 import Foundation
 
-enum KanbanColumn: String, CaseIterable, Codable, Hashable, Identifiable {
-    case index = "Index"
-    case wip = "WIP"
-    case done = "Done"
-
-    var id: String { rawValue }
-}
-
-struct KanbanCard: Identifiable, Codable, Equatable {
-    let id: UUID
-    var text: String
-    var column: KanbanColumn
-
-    init(id: UUID = UUID(), text: String, column: KanbanColumn = .index) {
-        self.id = id
-        self.text = text
-        self.column = column
-    }
-}
-
-struct QuickNote: Identifiable, Codable, Equatable {
-    let id: UUID
-    var text: String
-    let createdAt: Date
-
-    init(id: UUID = UUID(), text: String, createdAt: Date = Date()) {
-        self.id = id
-        self.text = text
-        self.createdAt = createdAt
-    }
-}
-
 @MainActor
 final class ProgressModel: ObservableObject {
-    enum Mode: String {
-        case timer
-        case kanban
-    }
+    static let completionDisplayDuration: TimeInterval = 10
 
-    @Published private(set) var mode: Mode = .timer
     @Published private(set) var title = "Ready"
     @Published private(set) var startDate: Date?
     @Published private(set) var endDate: Date?
     @Published private(set) var pausedRemaining: TimeInterval?
-    @Published private(set) var kanbanCards: [KanbanCard] = []
-    @Published private(set) var notes: [QuickNote] = []
+    @Published private(set) var completionVisibleUntil: Date?
+    @Published private(set) var isCompletionSoundEnabled = true
+
     private let defaults = UserDefaults.standard
     private let legacyDefaultsDomain = "local.menuprogress.app"
     private let legacyMigrationKey = "didMigrateMenuProgressDefaults"
 
     init() {
+        if defaults.object(forKey: "completionSoundEnabled") != nil {
+            isCompletionSoundEnabled = defaults.bool(forKey: "completionSoundEnabled")
+        }
         migrateLegacyDefaultsIfNeeded()
         restoreTimer()
-        restoreKanban()
-        restoreNotes()
-        if defaults.string(forKey: "activeMode") == Mode.kanban.rawValue, !kanbanCards.isEmpty {
-            mode = .kanban
-        }
-    }
-
-    private func migrateLegacyDefaultsIfNeeded() {
-        guard !defaults.bool(forKey: legacyMigrationKey) else { return }
-        if let legacyDefaults = defaults.persistentDomain(forName: legacyDefaultsDomain) {
-            for (key, value) in legacyDefaults where defaults.object(forKey: key) == nil {
-                defaults.set(value, forKey: key)
-            }
-        }
-        defaults.set(true, forKey: legacyMigrationKey)
     }
 
     var isRunning: Bool {
-        mode == .timer && endDate != nil && pausedRemaining == nil
+        endDate != nil && pausedRemaining == nil
     }
-    var isPaused: Bool { pausedRemaining != nil }
+
+    var isPaused: Bool {
+        pausedRemaining != nil
+    }
+
     var hasSession: Bool {
-        switch mode {
-        case .kanban:
-            return !kanbanCards.isEmpty
-        case .timer:
-            return endDate != nil || pausedRemaining != nil
-        }
+        endDate != nil || pausedRemaining != nil
     }
 
-    var completedKanbanCount: Int {
-        kanbanCards.lazy.filter { $0.column == .done }.count
-    }
-
-    var nextKanbanCard: KanbanCard? {
-        kanbanCards.first { $0.column == .wip } ?? kanbanCards.first { $0.column == .index }
-    }
-
-    var isKanbanComplete: Bool {
-        !kanbanCards.isEmpty && completedKanbanCount == kanbanCards.count
-    }
-
-    var kanbanProgress: Double {
-        guard !kanbanCards.isEmpty else { return 0 }
-        return Double(completedKanbanCount) / Double(kanbanCards.count)
+    var isShowingCompletion: Bool {
+        guard let completionVisibleUntil else { return false }
+        return completionVisibleUntil > Date()
     }
 
     var totalDuration: TimeInterval {
@@ -113,19 +53,18 @@ final class ProgressModel: ObservableObject {
 
     var progress: Double {
         guard hasSession else { return 0 }
-        switch mode {
-        case .kanban:
-            return kanbanProgress
-        case .timer:
-            return min(max(1 - remaining / totalDuration, 0), 1)
-        }
+        return min(max(1 - remaining / totalDuration, 0), 1)
+    }
+
+    var displayProgress: Double {
+        isShowingCompletion ? 1 : progress
     }
 
     var accessibilityText: String {
-        guard hasSession else { return "The Squeeze, ready" }
-        if mode == .kanban {
-            return "Kanban, \(Int(progress * 100)) percent complete, \(completedKanbanCount) of \(kanbanCards.count) cards done"
+        if isShowingCompletion {
+            return "The Squeeze, timer complete"
         }
+        guard hasSession else { return "The Squeeze, ready" }
         return "\(title), \(Int(progress * 100)) percent complete, \(longRemaining) remaining"
     }
 
@@ -150,17 +89,17 @@ final class ProgressModel: ObservableObject {
 
     func startTimer(seconds: Int, name: String = "Focus timer") {
         let duration = TimeInterval(max(1, seconds))
-        mode = .timer
+        let now = Date()
         title = name
-        startDate = Date()
-        endDate = Date().addingTimeInterval(duration)
+        startDate = now
+        endDate = now.addingTimeInterval(duration)
         pausedRemaining = nil
+        completionVisibleUntil = nil
         saveTimer()
         objectWillChange.send()
     }
 
     func togglePause() {
-        guard mode == .timer else { return }
         if let pausedRemaining {
             let duration = totalDuration
             let elapsed = max(duration - pausedRemaining, 0)
@@ -175,134 +114,57 @@ final class ProgressModel: ObservableObject {
     }
 
     func stop() {
-        mode = .timer
-        title = "Ready"
-        startDate = nil
-        endDate = nil
-        pausedRemaining = nil
-        clearSavedTimer()
-        defaults.set(Mode.timer.rawValue, forKey: "activeMode")
+        resetTimer()
+        completionVisibleUntil = nil
         objectWillChange.send()
     }
 
-    func addKanbanCard(_ text: String) {
-        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty else { return }
-        kanbanCards.append(KanbanCard(text: cleaned))
-        activateKanban()
-        saveKanban()
-    }
-
-    func moveKanbanCard(id: UUID, to column: KanbanColumn, before destinationID: UUID? = nil) {
-        guard let sourceIndex = kanbanCards.firstIndex(where: { $0.id == id }) else { return }
-        var card = kanbanCards.remove(at: sourceIndex)
-        card.column = column
-        if let destinationID,
-           let destinationIndex = kanbanCards.firstIndex(where: { $0.id == destinationID }) {
-            kanbanCards.insert(card, at: destinationIndex)
-        } else if let lastIndex = kanbanCards.lastIndex(where: { $0.column == column }) {
-            kanbanCards.insert(card, at: kanbanCards.index(after: lastIndex))
-        } else {
-            kanbanCards.append(card)
-        }
-        activateKanban()
-        saveKanban()
-    }
-
-    func updateKanbanCard(id: UUID, text: String) {
-        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty,
-              let index = kanbanCards.firstIndex(where: { $0.id == id }) else { return }
-        kanbanCards[index].text = cleaned
-        saveKanban()
-    }
-
-    func deleteKanbanCard(id: UUID) {
-        kanbanCards.removeAll { $0.id == id }
-        if kanbanCards.isEmpty, mode == .kanban {
-            mode = .timer
-            defaults.set(Mode.timer.rawValue, forKey: "activeMode")
-        }
-        saveKanban()
-    }
-
-    func clearKanban() {
-        kanbanCards.removeAll()
-        if mode == .kanban {
-            mode = .timer
-            defaults.set(Mode.timer.rawValue, forKey: "activeMode")
-        }
-        saveKanban()
-    }
-
-    func activateKanban() {
-        guard !kanbanCards.isEmpty else { return }
-        mode = .kanban
-        defaults.set(Mode.kanban.rawValue, forKey: "activeMode")
-        objectWillChange.send()
-    }
-
-    func addNote(_ text: String) {
-        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty else { return }
-        notes.insert(QuickNote(text: cleaned), at: 0)
-        saveNotes()
-    }
-
-    func updateNote(id: UUID, text: String) {
-        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty,
-              let index = notes.firstIndex(where: { $0.id == id }) else { return }
-        notes[index].text = cleaned
-        saveNotes()
-    }
-
-    func moveNote(id: UUID, before destinationID: UUID?) {
-        guard let sourceIndex = notes.firstIndex(where: { $0.id == id }) else { return }
-        let note = notes.remove(at: sourceIndex)
-        if let destinationID,
-           let destinationIndex = notes.firstIndex(where: { $0.id == destinationID }) {
-            notes.insert(note, at: destinationIndex)
-        } else {
-            notes.append(note)
-        }
-        saveNotes()
-    }
-
-    func deleteNote(id: UUID) {
-        notes.removeAll { $0.id == id }
-        saveNotes()
-    }
-
-    func clearNotes() {
-        notes.removeAll()
-        saveNotes()
-    }
-
-    func activateTimerIfAvailable() {
-        guard endDate != nil || pausedRemaining != nil else { return }
-        mode = .timer
-        defaults.set(mode.rawValue, forKey: "activeMode")
-        objectWillChange.send()
+    func toggleCompletionSound() {
+        isCompletionSoundEnabled.toggle()
+        defaults.set(isCompletionSoundEnabled, forKey: "completionSoundEnabled")
     }
 
     @discardableResult
     func tick(notifyObservers: Bool = true) -> Bool {
+        let now = Date()
+
+        if let completionVisibleUntil, completionVisibleUntil <= now {
+            self.completionVisibleUntil = nil
+        }
+
         guard isRunning else { return false }
-        guard remaining <= 0 else {
+        guard let endDate, endDate <= now else {
             if notifyObservers {
                 objectWillChange.send()
             }
             return false
         }
-        stop()
+
+        resetTimer()
+        completionVisibleUntil = now.addingTimeInterval(Self.completionDisplayDuration)
+        objectWillChange.send()
         return true
     }
 
+    private func resetTimer() {
+        title = "Ready"
+        startDate = nil
+        endDate = nil
+        pausedRemaining = nil
+        clearSavedTimer()
+    }
+
+    private func migrateLegacyDefaultsIfNeeded() {
+        guard !defaults.bool(forKey: legacyMigrationKey) else { return }
+        if let legacyDefaults = defaults.persistentDomain(forName: legacyDefaultsDomain) {
+            for (key, value) in legacyDefaults where defaults.object(forKey: key) == nil {
+                defaults.set(value, forKey: key)
+            }
+        }
+        defaults.set(true, forKey: legacyMigrationKey)
+    }
+
     private func saveTimer() {
-        defaults.set(mode.rawValue, forKey: "mode")
-        defaults.set(mode.rawValue, forKey: "timerMode")
-        defaults.set(mode.rawValue, forKey: "activeMode")
         defaults.set(title, forKey: "title")
         defaults.set(startDate, forKey: "startDate")
         defaults.set(endDate, forKey: "endDate")
@@ -317,40 +179,25 @@ final class ProgressModel: ObservableObject {
         guard let savedStart = defaults.object(forKey: "startDate") as? Date,
               let savedEnd = defaults.object(forKey: "endDate") as? Date else { return }
         let savedPaused = defaults.object(forKey: "pausedRemaining") as? Double
-        if savedEnd > Date() || savedPaused != nil {
-            mode = Mode(rawValue: defaults.string(forKey: "timerMode") ?? defaults.string(forKey: "mode") ?? "timer") ?? .timer
-            title = defaults.string(forKey: "title") ?? "Focus timer"
-            startDate = savedStart
-            endDate = savedEnd
-            pausedRemaining = savedPaused
+        guard savedEnd > Date() || savedPaused != nil else {
+            clearSavedTimer()
+            return
         }
+        title = defaults.string(forKey: "title") ?? "Focus timer"
+        startDate = savedStart
+        endDate = savedEnd
+        pausedRemaining = savedPaused
     }
 
     private func clearSavedTimer() {
-        ["mode", "title", "startDate", "endDate", "pausedRemaining"].forEach(defaults.removeObject(forKey:))
-    }
-
-    private func saveKanban() {
-        if let data = try? JSONEncoder().encode(kanbanCards) {
-            defaults.set(data, forKey: "kanbanCards")
-        }
-    }
-
-    private func restoreKanban() {
-        guard let data = defaults.data(forKey: "kanbanCards"),
-              let cards = try? JSONDecoder().decode([KanbanCard].self, from: data) else { return }
-        kanbanCards = cards
-    }
-
-    private func saveNotes() {
-        if let data = try? JSONEncoder().encode(notes) {
-            defaults.set(data, forKey: "quickNotes")
-        }
-    }
-
-    private func restoreNotes() {
-        guard let data = defaults.data(forKey: "quickNotes"),
-              let savedNotes = try? JSONDecoder().decode([QuickNote].self, from: data) else { return }
-        notes = savedNotes
+        [
+            "mode",
+            "timerMode",
+            "activeMode",
+            "title",
+            "startDate",
+            "endDate",
+            "pausedRemaining"
+        ].forEach(defaults.removeObject(forKey:))
     }
 }

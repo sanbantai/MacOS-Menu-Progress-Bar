@@ -6,23 +6,20 @@ The Squeeze is designed to work locally on your Mac. It has no user accounts, ad
 
 ## Data stored on your Mac
 
-The Squeeze stores the following information in macOS user preferences so it can restore your workspace:
+The Squeeze stores the following information in macOS user preferences so it can restore an active timer:
 
-- timer start, end, duration, and paused state;
-- the currently active tool;
-- Kanban card text, order, and column;
-- quick-note text and order; and
-- tool visibility preferences.
+- timer title, start, end, duration, and paused state; and
+- the completion-sound preference.
 
 This data uses the preferences domain `com.sanbantai.thesqueeze` and remains on your Mac.
 
-Version 0.0.2 performs a one-time local migration from the legacy `local.menuprogress.app` preferences domain. The migration copies existing workspace data into the new domain; it does not transmit or upload anything.
+Version 0.0.2 introduced a one-time local migration from the legacy `local.menuprogress.app` preferences domain. The migration copies existing timer data into the new domain; it does not transmit or upload anything.
+
+Older releases also stored Kanban cards, quick notes, and tool visibility preferences. The timer-only app does not read or modify that data, but it may remain in macOS preferences after an upgrade until the preferences domain is deleted.
 
 ## Deleting data
 
-Individual Kanban cards and notes can be deleted inside the app. The **Clear board** and **Clear notes** actions require confirmation before removing all content in their section.
-
-To remove all current and legacy preferences, quit The Squeeze and run:
+Stopping a timer removes its saved timer state. To remove all current and historical preferences, quit The Squeeze and run:
 
 ```sh
 defaults delete com.sanbantai.thesqueeze

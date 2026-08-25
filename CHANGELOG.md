@@ -2,6 +2,23 @@
 
 All notable changes to The Squeeze are documented here.
 
+## Unreleased
+
+### Changed
+
+- Replaced the animated idle menu-bar pattern with an empty, motionless progress track.
+- Made timer completion fill the bar green for 10 seconds before returning it to empty.
+- Simplified the popover to focus exclusively on timer controls and progress.
+- Replaced snapshot-based menu-bar updates with one continuous, display-synchronized Core Animation over the timer's exact duration.
+- Made clicks outside the duration fields dismiss their selection using SwiftUI focus state.
+- Made empty duration fields visually blank instead of showing zeroes.
+- Added a persistent bell control for turning the timer-completion sound on or off.
+
+### Removed
+
+- Kanban boards, quick notes, tool visibility settings, tool-switching shortcuts, and preset timer buttons.
+- Papaya grinder and juice animations from the timer interface.
+
 ## [0.0.3] - 2026-08-11
 
 ### Added
